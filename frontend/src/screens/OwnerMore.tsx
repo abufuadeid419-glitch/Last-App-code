@@ -7,6 +7,9 @@ import { useAuth } from "@/src/auth";
 import { AccountButton } from "@/src/components/AccountButton";
 import { AgentsMap } from "@/src/components/AgentsMap";
 import { OrgProfile } from "@/src/components/OrgProfile";
+import { PriceLists } from "@/src/components/PriceLists";
+import { RoutePlanner } from "@/src/components/RoutePlanner";
+import { OwnerStockRequests } from "@/src/components/StockRequests";
 import { useApi, useBottomChrome, useMutate } from "@/src/hooks";
 import { spacing, useTheme } from "@/src/theme";
 import { Badge, Btn, Card, Empty, Field, Header, IconBtn, Loading, Row, Section, Segments, Select, Sheet, T, useToast } from "@/src/ui";
@@ -69,7 +72,7 @@ export default function OwnerMore() {
   const { colors } = useTheme();
   const { user } = useAuth();
   const bottom = useBottomChrome();
-  const [tab, setTab] = useState<"team" | "deliveries" | "tracking" | "profile">("team");
+  const [tab, setTab] = useState<"team" | "deliveries" | "routes" | "prices" | "tracking" | "profile">("team");
   const tracking = useApi<any[]>("/tracking/agents", tab === "tracking");
   const emps = useApi<any>("/employees");
   const deliveries = useApi<any[]>("/deliveries");
@@ -82,14 +85,18 @@ export default function OwnerMore() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }} testID="owner-more-screen">
       <Header title="الإدارة" subtitle={`${user?.org?.name ?? ""} · حتى ${user?.org?.max_employees ?? 0} موظفين`} right={<AccountButton />} />
-      <Segments value={tab} onChange={setTab} options={[{ key: "team", label: "الموظفون" }, { key: "deliveries", label: "تسليم البضاعة" }, { key: "tracking", label: "تتبع GPS" }, { key: "profile", label: "ملف المؤسسة" }]} />
+      <Segments value={tab} onChange={setTab} options={[{ key: "team", label: "الموظفون" }, { key: "deliveries", label: "تسليم البضاعة" }, { key: "routes", label: "خطوط السير" }, { key: "prices", label: "أسعار العملاء" }, { key: "tracking", label: "تتبع GPS" }, { key: "profile", label: "ملف المؤسسة" }]} />
       <KeyboardAwareScrollView
         bottomOffset={24}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: spacing.lg, gap: spacing.xl, paddingBottom: bottom + spacing.xl }}
         refreshControl={<RefreshControl refreshing={emps.isRefetching || deliveries.isRefetching} onRefresh={() => { emps.refetch(); deliveries.refetch(); tracking.refetch(); }} tintColor={colors.brandPrimary} />}
       >
-        {tab === "profile" ? (
+        {tab === "routes" ? (
+          <RoutePlanner agents={agents} />
+        ) : tab === "prices" ? (
+          <PriceLists />
+        ) : tab === "profile" ? (
           <OrgProfile />
         ) : tab === "tracking" ? (
           tracking.isLoading ? <Loading /> : <AgentsMap agents={tracking.data ?? []} />
@@ -115,6 +122,7 @@ export default function OwnerMore() {
           </>
         ) : (
           <>
+            <OwnerStockRequests />
             <Btn testID="open-delivery-button" title="تسليم بضاعة لموزع" icon="car-outline" onPress={() => setDeliver(true)} disabled={!agents.length} />
             {!agents.length && <T v="caption" style={{ textAlign: "center" }}>أضف موزعاً ميدانياً أولاً من تبويب الموظفين</T>}
             <Section title="سجل التسليمات">

@@ -10,6 +10,7 @@ import { SyncBanner } from "@/src/components/SyncBanner";
 import { useApi, useBottomChrome } from "@/src/hooks";
 import { useSyncState } from "@/src/offline";
 import { offlineSale } from "@/src/offlineActions";
+import { usePriceResolver } from "@/src/pricing";
 import { radius, spacing, useTheme } from "@/src/theme";
 import { Btn, Card, Empty, Field, Header, IconBtn, Loading, Select, T, useToast } from "@/src/ui";
 
@@ -29,14 +30,17 @@ export default function NewSale() {
   const { user } = useAuth();
   const { online } = useSyncState();
 
-  const total = useMemo(() => lines.reduce((s, l) => s + (+l.quantity || 0) * (+l.price || 0), 0), [lines]);
+  const resolve = usePriceResolver();
+  const priceOf = (l: Line) => resolve(cust, l.product_id, +l.price);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const total = useMemo(() => lines.reduce((s, l) => s + (+l.quantity || 0) * priceOf(l), 0), [lines, cust, resolve]);
   const [saving, setSaving] = useState(false);
 
   const addLine = (p: any) => {
     if (lines.find((l) => l.product_id === p.product_id)) return toast("المنتج مضاف مسبقاً", "error");
     setLines([...lines, { product_id: p.product_id, name: p.product_name, available: p.quantity, quantity: "1", price: String(p.sale_price) }]);
   };
-  const upd = (i: number, k: "quantity" | "price", v: string) => setLines(lines.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
+  const upd = (i: number, k: "quantity", v: string) => setLines(lines.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
 
   const submit = async () => {
     if (!cust) return toast("اختر العميل", "error");
@@ -47,7 +51,7 @@ export default function NewSale() {
     try {
       const doc = await offlineSale({
         customer: cust,
-        lines: lines.map((l) => ({ product_id: l.product_id, product_name: l.name, quantity: +l.quantity, price: +l.price || 0 })),
+        lines: lines.map((l) => ({ product_id: l.product_id, product_name: l.name, quantity: +l.quantity, price: priceOf(l) })),
         paid: paid === "" ? null : +paid || 0,
         notes,
         userName: user?.name,
@@ -95,12 +99,12 @@ export default function NewSale() {
               </View>
               <View style={{ flexDirection: "row", gap: spacing.md }}>
                 <View style={{ flex: 1 }}><Field testID={`line-qty-input-${i}`} label="الكمية" keyboardType="decimal-pad" value={l.quantity} onChangeText={(v) => upd(i, "quantity", v)} /></View>
-                <View style={{ flex: 1 }}><Field testID={`line-price-input-${i}`} label="السعر" keyboardType="decimal-pad" value={l.price} onChangeText={(v) => upd(i, "price", v)} /></View>
+                <View style={{ flex: 1, justifyContent: "flex-end", gap: 2, paddingBottom: spacing.sm }}><T v="caption">السعر {cust?.type_id ? "(حسب فئة العميل)" : ""}</T><T v="h2" testID={`line-price-${i}`}>{money(priceOf(l))}</T><T v="caption">المجموع: {money((+l.quantity || 0) * priceOf(l))}</T></View>
               </View>
             </View>
           ))}
           {!!inv.data?.length && (
-            <Select testID="add-line-select" label="إضافة منتج" placeholder="+ اختر منتجاً من مخزونك" value={null} options={inv.data} getLabel={(p: any) => p.product_name} getSub={(p: any) => `متوفر ${p.quantity} · ${money(p.sale_price)}`} onSelect={addLine} />
+            <Select testID="add-line-select" label="إضافة منتج" placeholder="+ اختر منتجاً من مخزونك" value={null} options={inv.data.filter((p: any) => p.quantity > 0)} getLabel={(p: any) => p.product_name} getSub={(p: any) => `متوفر ${p.quantity} · ${money(resolve(cust, p.product_id, p.sale_price))}`} onSelect={addLine} />
           )}
         </View>
 

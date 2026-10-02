@@ -7,7 +7,7 @@ import { useApi, useBottomChrome, useMutate } from "@/src/hooks";
 import { spacing, useTheme } from "@/src/theme";
 import { Badge, Btn, Card, Empty, Field, Header, IconBtn, Loading, Segments, Sheet, T, useToast } from "@/src/ui";
 
-const blankPlan = { name: "", price: "", currency: "USD", days: "30", max_employees: "5", features: "", active: true };
+const blankPlan = { name: "", price: "", yearly_price: "", currency: "USD", days: "30", max_employees: "5", features: "", active: true };
 
 export default function DevBilling() {
   const { colors } = useTheme();
@@ -31,7 +31,7 @@ export default function DevBilling() {
 
   const submitPlan = () => {
     if (!plan.name.trim() || plan.price === "") return toast("أدخل اسم الخطة والسعر", "error");
-    const body = { name: plan.name, price: +plan.price || 0, currency: plan.currency || "USD", days: +plan.days || 30, max_employees: +plan.max_employees || 1, features: plan.features.split("\n").map((s: string) => s.trim()).filter(Boolean), active: plan.active };
+    const body = { name: plan.name, price: +plan.price || 0, currency: plan.currency || "USD", days: +plan.days || 30, max_employees: +plan.max_employees || 1, features: plan.features.split("\n").map((s: string) => s.trim()).filter(Boolean), active: plan.active, yearly_price: plan.yearly_price === "" || plan.yearly_price == null ? null : +plan.yearly_price };
     if (plan.id) updatePlan.mutate({ ...body, id: plan.id });
     else createPlan.mutate(body);
   };
@@ -63,12 +63,13 @@ export default function DevBilling() {
           )))}
         {tab === "plans" &&
           (plans.isLoading ? <Loading /> : !plans.data?.length ? <Empty icon="pricetags-outline" text="لا توجد خطط. أنشئ خطة لتظهر للمالكين." action={<Btn small testID="empty-add-plan-button" title="خطة جديدة" icon="add" onPress={() => setPlan(blankPlan)} />} /> : plans.data.map((p) => (
-            <Card key={p.id} testID={`plan-row-${p.id}`} onPress={() => setPlan({ ...p, price: String(p.price), days: String(p.days), max_employees: String(p.max_employees), features: (p.features ?? []).join("\n") })} style={{ gap: spacing.xs }}>
+            <Card key={p.id} testID={`plan-row-${p.id}`} onPress={() => setPlan({ ...p, price: String(p.price), yearly_price: p.yearly_price != null ? String(p.yearly_price) : "", days: String(p.days), max_employees: String(p.max_employees), features: (p.features ?? []).join("\n") })} style={{ gap: spacing.xs }}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
                 <T v="h2" style={{ flex: 1 }}>{p.name}</T>
                 <Badge text={p.active ? "ظاهرة" : "مخفية"} tone={p.active ? "success" : "warning"} />
               </View>
               <T>{money(p.price)} {p.currency} · {p.days} يوم · {p.max_employees} موظف</T>
+              {p.yearly_price != null && <T v="caption" color="success">سنوي: {money(p.yearly_price)} {p.currency}</T>}
               {!!p.features?.length && <T v="caption">{p.features.join(" · ")}</T>}
             </Card>
           )))}
@@ -96,6 +97,7 @@ export default function DevBilling() {
           <>
             <Field testID="plan-name-input" label="اسم الخطة" value={plan.name} onChangeText={(v) => setPlan({ ...plan, name: v })} />
             <View style={{ flexDirection: "row", gap: spacing.md }}>
+              <View style={{ flex: 1 }}><Field testID="plan-yearly-price-input" label="السعر السنوي" keyboardType="decimal-pad" placeholder="اختياري" value={plan.yearly_price} onChangeText={(v) => setPlan({ ...plan, yearly_price: v })} /></View>
               <View style={{ flex: 1 }}><Field testID="plan-price-input" label="السعر" keyboardType="decimal-pad" value={plan.price} onChangeText={(v) => setPlan({ ...plan, price: v })} /></View>
               <View style={{ flex: 1 }}><Field testID="plan-currency-input" label="العملة" value={plan.currency} onChangeText={(v) => setPlan({ ...plan, currency: v })} /></View>
             </View>

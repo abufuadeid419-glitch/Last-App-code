@@ -25,6 +25,13 @@ User choices: FastAPI + MongoDB backend, all roles (Developer, Owner, Accountant
 - Upgrade plans: the developer creates plans, sets payment settings, and approves or rejects requests (Developer > الاشتراكات). The owner uses /upgrade (also reachable from the blocked screen)
 - GPS: foreground location tracking for agents, with location attached to every transaction. Owner sees agent locations under الإدارة > تتبع GPS (map on native, list on web)
 
+## Iteration 3 (2026-06)
+- Route planner: in Owner > الإدارة > خطوط السير, the owner picks a distributor, a date and customers, then orders them by hand or by nearest. The distributor sees today's route on the home screen with directions and visited/skipped marks, which work offline
+- Restock requests: distributors send a one-tap request for low items (works offline). The owner fulfills a request, which creates a delivery, or rejects it, from the deliveries segment
+- Customer price lists: customer types with a price per product. The server locks prices on sales and returns, and the invoice form shows them read-only
+- Customer GPS location: saved from the customer form, or filled in automatically from the first sale with GPS
+- Yearly plans: the developer sets yearly_price. The upgrade screen has a monthly/yearly toggle and a "save X%" badge. A yearly approval adds 365 days
+
 ## Backlog
 - Background location tracking (requires a native build)
 - P1: PDF/print and share for invoices; offline sales queue; purchase returns; reports by date range

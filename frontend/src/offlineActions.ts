@@ -63,10 +63,26 @@ export async function offlineReturn(p: { customer: any; line: Line; reason: stri
   return doc;
 }
 
-export async function offlineCustomer(p: { name: string; phone: string; address: string }) {
+export async function offlineCustomer(p: { name: string; phone: string; address: string; type_id?: string | null; lat?: number | null; lng?: number | null }) {
   const id = uid();
   const doc = { id, pending: true, ...p, location: "", balance: 0, created_at: new Date().toISOString() };
   await updateCached<any[]>("/customers", (cs) => [...cs, doc]);
   await enqueue({ id, path: "/customers", body: { id, ...p }, label: `عميل جديد · ${p.name}` });
+  return doc;
+}
+
+export async function offlineStopStatus(route: any, stop: any, status: "VISITED" | "SKIPPED" | "PENDING") {
+  const id = uid();
+  await updateCached<any>("/routes/mine", (r) =>
+    r && r.id === route.id ? { ...r, stops: r.stops.map((s: any) => (s.customer_id === stop.customer_id ? { ...s, status, at: new Date().toISOString() } : s)) } : r,
+  );
+  await enqueue({ id, path: `/routes/${route.id}/stops/${stop.customer_id}/status`, body: { status }, label: `خط السير · ${stop.customer_name}` });
+}
+
+export async function offlineStockRequest(items: { product_id: string; product_name: string; quantity: number }[], note = "") {
+  const id = uid();
+  const doc = { id, pending: true, items, note, status: "PENDING", created_at: new Date().toISOString() };
+  await updateCached<any[]>("/stock-requests", (l) => [doc, ...l]);
+  await enqueue({ id, path: "/stock-requests", body: { id, items: items.map(({ product_id, quantity }) => ({ product_id, quantity })), note }, label: `طلب تعبئة · ${items.length} صنف` });
   return doc;
 }

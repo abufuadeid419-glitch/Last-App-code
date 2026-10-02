@@ -84,6 +84,9 @@ class CustomerIn(BaseModel):
     phone: str = ""
     address: str = ""
     location: str = ""
+    type_id: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
 
 
 class InviteIn(BaseModel):
@@ -505,10 +508,12 @@ async def create_delivery(body: DeliveryIn, user=Depends(OWNER)):
 
 @api.get("/my/inventory")
 async def my_inventory(user=Depends(AGENT)):
-    inv = await db.distributor_inventory.find({"distributor_id": user["user_id"], "quantity": {"$gt": 0}}, NO_ID).to_list(1000)
-    prices = {p["id"]: p["sale_price"] for p in await db.products.find({"org_id": user["org_id"]}, NO_ID).to_list(1000)}
+    inv = await db.distributor_inventory.find({"distributor_id": user["user_id"]}, NO_ID).to_list(1000)
+    prods = {p["id"]: p for p in await db.products.find({"org_id": user["org_id"]}, NO_ID).to_list(1000)}
+    inv = [i for i in inv if i["product_id"] in prods]
     for i in inv:
-        i["sale_price"] = prices.get(i["product_id"], 0)
+        i["sale_price"] = prods[i["product_id"]]["sale_price"]
+        i["min_stock"] = prods[i["product_id"]].get("min_stock", 0)
     return inv
 
 
@@ -551,14 +556,17 @@ async def create_sale(body: SaleIn, user=Depends(AGENT)):
         inv = await db.distributor_inventory.find_one({"distributor_id": user["user_id"], "product_id": it.product_id}, NO_ID)
         if not inv or inv["quantity"] < it.quantity:
             raise HTTPException(400, f"الكمية غير متوفرة لديك: {inv['product_name'] if inv else ''}")
-        line = round(it.quantity * it.price, 2)
+        price = await price_for(user["org_id"], cust, it.product_id)
+        line = round(it.quantity * price, 2)
         total += line
-        items.append({"product_id": it.product_id, "product_name": inv["product_name"], "quantity": it.quantity, "price": it.price, "total": line})
+        items.append({"product_id": it.product_id, "product_name": inv["product_name"], "quantity": it.quantity, "price": price, "total": line})
     total = round(total, 2)
     paid = min(body.paid_amount, total)
     for it in items:
         await db.distributor_inventory.update_one({"distributor_id": user["user_id"], "product_id": it["product_id"]}, {"$inc": {"quantity": -it["quantity"]}})
     await db.customers.update_one({"id": cust["id"]}, {"$inc": {"balance": round(total - paid, 2)}})
+    if body.lat is not None and cust.get("lat") is None:
+        await db.customers.update_one({"id": cust["id"]}, {"$set": {"lat": body.lat, "lng": body.lng}})
     doc = {"id": body.id or new_id(), **geo(body), "org_id": user["org_id"], "invoice_no": await next_no(user["org_id"], "sale", "INV"),
            "customer_id": cust["id"], "customer_name": cust["name"], "distributor_id": user["user_id"],
            "distributor_name": user.get("name"), "items": items, "total": total, "paid_amount": paid,
@@ -619,9 +627,10 @@ async def create_return(body: ReturnIn, user=Depends(AGENT)):
         prod = await db.products.find_one({"id": it.product_id, "org_id": user["org_id"]}, NO_ID)
         if not prod:
             raise HTTPException(404, "المنتج غير موجود")
-        line = round(it.quantity * it.price, 2)
+        price = await price_for(user["org_id"], cust, prod["id"])
+        line = round(it.quantity * price, 2)
         total += line
-        items.append({"product_id": prod["id"], "product_name": prod["name"], "quantity": it.quantity, "price": it.price, "total": line})
+        items.append({"product_id": prod["id"], "product_name": prod["name"], "quantity": it.quantity, "price": price, "total": line})
         await db.distributor_inventory.update_one(
             {"distributor_id": user["user_id"], "product_id": prod["id"]},
             {"$inc": {"quantity": it.quantity}, "$set": {"org_id": user["org_id"], "product_name": prod["name"]}}, upsert=True)
@@ -745,6 +754,7 @@ class PlanIn(BaseModel):
     max_employees: int = Field(gt=0, default=5)
     features: List[str] = []
     active: bool = True
+    yearly_price: Optional[float] = Field(default=None, ge=0)
 
 
 class PaymentSettingsIn(BaseModel):
@@ -755,6 +765,7 @@ class PaymentSettingsIn(BaseModel):
 
 class UpgradeIn(BaseModel):
     plan_id: str
+    billing: str = "monthly"  # monthly | yearly
     payment_ref: str
     notes: str = ""
 
@@ -884,10 +895,14 @@ async def create_upgrade(body: UpgradeIn, user=Depends(owner_any)):
         raise HTTPException(400, "أدخل رقم/مرجع عملية الدفع")
     if await db.upgrade_requests.find_one({"org_id": user["org_id"], "status": "PENDING"}):
         raise HTTPException(400, "لديك طلب قيد المراجعة بالفعل")
+    yearly = body.billing == "yearly"
+    if yearly and not plan.get("yearly_price"):
+        raise HTTPException(400, "لا يوجد سعر سنوي لهذه الخطة")
     org = await db.organizations.find_one({"id": user["org_id"]}, NO_ID)
     doc = {"id": new_id(), "org_id": org["id"], "org_name": org["name"], "owner_email": user["email"],
-           "plan_id": plan["id"], "plan_name": plan["name"], "price": plan["price"], "currency": plan["currency"],
-           "days": plan["days"], "max_employees": plan["max_employees"], "payment_ref": body.payment_ref.strip(),
+           "plan_id": plan["id"], "plan_name": plan["name"] + (" (سنوي)" if yearly else ""), "billing": "yearly" if yearly else "monthly",
+           "price": plan["yearly_price"] if yearly else plan["price"], "currency": plan["currency"],
+           "days": 365 if yearly else plan["days"], "max_employees": plan["max_employees"], "payment_ref": body.payment_ref.strip(),
            "notes": body.notes, "status": "PENDING", "created_at": iso()}
     await db.upgrade_requests.insert_one(dict(doc))
     return doc
@@ -996,6 +1011,235 @@ async def tracking_agents(user=Depends(STAFF)):
         out.append({"user_id": a["user_id"], "name": a.get("name"), "email": a["email"],
                     "last_location": a.get("last_location"), "today_visits": visits})
     return out
+
+
+# ---------------- Customer types / price lists ----------------
+class CustomerTypeIn(BaseModel):
+    name: str
+    prices: dict = {}  # product_id -> price
+
+
+async def price_for(org_id: str, cust: dict, product_id: str) -> float:
+    if cust.get("type_id"):
+        t = await db.customer_types.find_one({"id": cust["type_id"], "org_id": org_id}, NO_ID)
+        if t and t.get("prices", {}).get(product_id) is not None:
+            return float(t["prices"][product_id])
+    prod = await db.products.find_one({"id": product_id, "org_id": org_id}, NO_ID)
+    return float(prod["sale_price"]) if prod else 0.0
+
+
+def _clean_prices(prices: dict) -> dict:
+    out = {}
+    for k, v in prices.items():
+        try:
+            if v is not None and v != "":
+                out[k] = round(float(v), 2)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "سعر غير صالح")
+    return out
+
+
+@api.get("/customer-types")
+async def list_customer_types(user=Depends(ANY_ORG)):
+    return await db.customer_types.find({"org_id": user["org_id"]}, NO_ID).sort("name", 1).to_list(200)
+
+
+@api.post("/customer-types")
+async def create_customer_type(body: CustomerTypeIn, user=Depends(OWNER)):
+    if not body.name.strip():
+        raise HTTPException(400, "اسم الفئة مطلوب")
+    doc = {"id": new_id(), "org_id": user["org_id"], "name": body.name.strip(), "prices": _clean_prices(body.prices), "created_at": iso()}
+    await db.customer_types.insert_one(dict(doc))
+    return doc
+
+
+@api.put("/customer-types/{tid}")
+async def update_customer_type(tid: str, body: CustomerTypeIn, user=Depends(OWNER)):
+    await db.customer_types.update_one({"id": tid, "org_id": user["org_id"]}, {"$set": {"name": body.name.strip(), "prices": _clean_prices(body.prices)}})
+    return await db.customer_types.find_one({"id": tid}, NO_ID)
+
+
+@api.delete("/customer-types/{tid}")
+async def delete_customer_type(tid: str, user=Depends(OWNER)):
+    await db.customer_types.delete_one({"id": tid, "org_id": user["org_id"]})
+    await db.customers.update_many({"org_id": user["org_id"], "type_id": tid}, {"$set": {"type_id": None}})
+    return {"ok": True}
+
+
+# ---------------- Route planner ----------------
+class RouteIn(BaseModel):
+    distributor_id: str
+    date: str  # YYYY-MM-DD
+    customer_ids: List[str]
+
+
+class RouteStopsIn(BaseModel):
+    customer_ids: List[str]
+
+
+class OptimizeIn(BaseModel):
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
+class StopStatusIn(BaseModel):
+    id: Optional[str] = None
+    status: str  # VISITED | SKIPPED | PENDING
+    note: str = ""
+
+
+def _dist(a, b):
+    import math
+    lat1, lng1, lat2, lng2 = map(math.radians, (a[0], a[1], b[0], b[1]))
+    h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lng2 - lng1) / 2) ** 2
+    return 6371 * 2 * math.asin(math.sqrt(h))
+
+
+async def _build_stops(org_id: str, customer_ids: List[str], old: List[dict]) -> List[dict]:
+    prev = {s["customer_id"]: s for s in old}
+    stops = []
+    for cid in dict.fromkeys(customer_ids):
+        c = await db.customers.find_one({"id": cid, "org_id": org_id}, NO_ID)
+        if not c:
+            continue
+        p = prev.get(cid, {})
+        stops.append({"customer_id": c["id"], "customer_name": c["name"], "address": c.get("address", ""), "phone": c.get("phone", ""),
+                      "lat": c.get("lat"), "lng": c.get("lng"), "status": p.get("status", "PENDING"), "note": p.get("note", ""), "at": p.get("at")})
+    return stops
+
+
+async def _route_access(rid: str, user: dict) -> dict:
+    r = await db.routes.find_one({"id": rid, "org_id": user["org_id"]}, NO_ID)
+    if not r:
+        raise HTTPException(404, "خط السير غير موجود")
+    if user.get("employee_type") == "FIELD_AGENT" and r["distributor_id"] != user["user_id"]:
+        raise HTTPException(403, "ليس لديك صلاحية")
+    return r
+
+
+@api.get("/routes")
+async def list_routes(date: Optional[str] = None, distributor_id: Optional[str] = None, user=Depends(STAFF)):
+    q = {"org_id": user["org_id"]}
+    if date:
+        q["date"] = date
+    if distributor_id:
+        q["distributor_id"] = distributor_id
+    return await db.routes.find(q, NO_ID).sort("date", -1).to_list(200)
+
+
+@api.get("/routes/mine")
+async def my_route(date: Optional[str] = None, user=Depends(AGENT)):
+    d = date or now().date().isoformat()
+    return await db.routes.find_one({"distributor_id": user["user_id"], "date": d}, NO_ID)
+
+
+@api.post("/routes")
+async def save_route(body: RouteIn, user=Depends(OWNER)):
+    dist = await db.users.find_one({"user_id": body.distributor_id, "org_id": user["org_id"], "employee_type": "FIELD_AGENT"}, NO_ID)
+    if not dist:
+        raise HTTPException(404, "الموزع غير موجود")
+    ex = await db.routes.find_one({"distributor_id": dist["user_id"], "date": body.date}, NO_ID)
+    stops = await _build_stops(user["org_id"], body.customer_ids, ex["stops"] if ex else [])
+    if ex:
+        await db.routes.update_one({"id": ex["id"]}, {"$set": {"stops": stops}})
+        return await db.routes.find_one({"id": ex["id"]}, NO_ID)
+    doc = {"id": new_id(), "org_id": user["org_id"], "distributor_id": dist["user_id"], "distributor_name": dist.get("name"),
+           "date": body.date, "stops": stops, "created_at": iso()}
+    await db.routes.insert_one(dict(doc))
+    return doc
+
+
+@api.delete("/routes/{rid}")
+async def delete_route(rid: str, user=Depends(OWNER)):
+    await db.routes.delete_one({"id": rid, "org_id": user["org_id"]})
+    return {"ok": True}
+
+
+@api.post("/routes/{rid}/optimize")
+async def optimize_route(rid: str, body: OptimizeIn, user=Depends(ANY_ORG)):
+    r = await _route_access(rid, user)
+    if user.get("role") == "EMPLOYEE" and user.get("employee_type") != "FIELD_AGENT":
+        raise HTTPException(403, "ليس لديك صلاحية")
+    stops = await _build_stops(user["org_id"], [s["customer_id"] for s in r["stops"]], r["stops"])
+    done = [s for s in stops if s["status"] != "PENDING"]
+    located = [s for s in stops if s["status"] == "PENDING" and s.get("lat") is not None]
+    unlocated = [s for s in stops if s["status"] == "PENDING" and s.get("lat") is None]
+    if body.lat is not None:
+        cur = (body.lat, body.lng)
+    else:
+        dist = await db.users.find_one({"user_id": r["distributor_id"]}, NO_ID)
+        loc = (dist or {}).get("last_location")
+        cur = (loc["lat"], loc["lng"]) if loc else ((located[0]["lat"], located[0]["lng"]) if located else None)
+    ordered = []
+    while located:
+        nxt = min(located, key=lambda s: _dist(cur, (s["lat"], s["lng"])))
+        ordered.append(nxt)
+        located.remove(nxt)
+        cur = (nxt["lat"], nxt["lng"])
+    new = done + ordered + unlocated
+    await db.routes.update_one({"id": rid}, {"$set": {"stops": new}})
+    return {**await db.routes.find_one({"id": rid}, NO_ID), "unlocated": len(unlocated)}
+
+
+@api.post("/routes/{rid}/stops/{cid}/status")
+async def stop_status(rid: str, cid: str, body: StopStatusIn, user=Depends(AGENT)):
+    await _route_access(rid, user)
+    if body.status not in ("VISITED", "SKIPPED", "PENDING"):
+        raise HTTPException(400, "حالة غير صالحة")
+    await db.routes.update_one({"id": rid, "stops.customer_id": cid},
+                               {"$set": {"stops.$.status": body.status, "stops.$.note": body.note, "stops.$.at": iso()}})
+    return await db.routes.find_one({"id": rid}, NO_ID)
+
+
+# ---------------- Stock (restock) requests ----------------
+class StockReqIn(BaseModel):
+    id: Optional[str] = None
+    items: List[DeliveryLine]
+    note: str = ""
+
+
+@api.get("/stock-requests")
+async def list_stock_requests(user=Depends(ANY_ORG)):
+    q = {"org_id": user["org_id"]}
+    if user.get("employee_type") == "FIELD_AGENT":
+        q["distributor_id"] = user["user_id"]
+    return await db.stock_requests.find(q, NO_ID).sort("created_at", -1).to_list(300)
+
+
+@api.post("/stock-requests")
+async def create_stock_request(body: StockReqIn, user=Depends(AGENT)):
+    if body.id:
+        ex = await db.stock_requests.find_one({"id": body.id, "org_id": user["org_id"]}, NO_ID)
+        if ex:
+            return ex
+    if not body.items:
+        raise HTTPException(400, "اختر منتجاً واحداً على الأقل")
+    items = []
+    for it in body.items:
+        prod = await db.products.find_one({"id": it.product_id, "org_id": user["org_id"]}, NO_ID)
+        if prod:
+            items.append({"product_id": prod["id"], "product_name": prod["name"], "quantity": it.quantity})
+    doc = {"id": body.id or new_id(), "org_id": user["org_id"], "distributor_id": user["user_id"], "distributor_name": user.get("name"),
+           "items": items, "note": body.note, "status": "PENDING", "created_at": iso()}
+    await db.stock_requests.insert_one(dict(doc))
+    return doc
+
+
+@api.post("/stock-requests/{rid}/fulfill")
+async def fulfill_stock_request(rid: str, user=Depends(OWNER)):
+    req = await db.stock_requests.find_one({"id": rid, "org_id": user["org_id"], "status": "PENDING"}, NO_ID)
+    if not req:
+        raise HTTPException(404, "الطلب غير موجود أو تمت معالجته")
+    delivery = await create_delivery(DeliveryIn(distributor_id=req["distributor_id"], notes="تعبئة حسب طلب الموزع",
+                                                items=[DeliveryLine(product_id=i["product_id"], quantity=i["quantity"]) for i in req["items"]]), user)
+    await db.stock_requests.update_one({"id": rid}, {"$set": {"status": "FULFILLED", "delivery_id": delivery["id"], "handled_at": iso()}})
+    return await db.stock_requests.find_one({"id": rid}, NO_ID)
+
+
+@api.post("/stock-requests/{rid}/reject")
+async def reject_stock_request(rid: str, user=Depends(OWNER)):
+    await db.stock_requests.update_one({"id": rid, "org_id": user["org_id"], "status": "PENDING"}, {"$set": {"status": "REJECTED", "handled_at": iso()}})
+    return await db.stock_requests.find_one({"id": rid}, NO_ID)
 
 
 @api.get("/")

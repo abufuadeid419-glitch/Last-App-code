@@ -7,7 +7,7 @@ import { fmtDate, money } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useApi, useMutate } from "@/src/hooks";
 import { spacing, useTheme } from "@/src/theme";
-import { Badge, Btn, Card, Empty, Field, Header, IconBtn, Ionicons, Loading, Section, Sheet, T, useToast } from "@/src/ui";
+import { Badge, Btn, Card, Empty, Field, Header, IconBtn, Ionicons, Loading, Section, Segments, Sheet, T, useToast } from "@/src/ui";
 
 const statusMap: Record<string, { t: string; tone: "warning" | "success" | "error" }> = {
   PENDING: { t: "قيد المراجعة", tone: "warning" },
@@ -25,6 +25,10 @@ export default function Upgrade() {
   const pay = useApi<any>("/settings/payment");
   const reqs = useApi<any[]>("/upgrade-requests");
   const [sel, setSel] = useState<any>(null);
+  const [billing, setBilling] = useState<"monthly" | "yearly">("monthly");
+  const hasYearly = plans.data?.some((p) => p.yearly_price);
+  const priceOf = (p: any) => (billing === "yearly" && p?.yearly_price ? p.yearly_price : p?.price);
+  const savePct = (p: any) => (p.yearly_price && p.price ? Math.round((1 - p.yearly_price / (p.price * (365 / p.days))) * 100) : 0);
   const [ref, setRef] = useState("");
   const [notes, setNotes] = useState("");
   const submit = useMutate("POST", "/upgrade-requests", "تم إرسال طلب الترقية، سيتم مراجعته قريباً", () => {
@@ -49,6 +53,11 @@ export default function Upgrade() {
         </Card>
 
         <Section title="الخطط المتاحة">
+          {hasYearly && (
+            <View style={{ marginHorizontal: -spacing.lg }}>
+              <Segments value={billing} onChange={setBilling} options={[{ key: "monthly", label: "شهري" }, { key: "yearly", label: "سنوي · وفّر أكثر" }]} />
+            </View>
+          )}
           {plans.isLoading ? (
             <Loading />
           ) : !plans.data?.length ? (
@@ -58,7 +67,11 @@ export default function Upgrade() {
               <Card key={p.id} testID={`plan-card-${p.id}`} style={{ gap: spacing.sm }}>
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <T v="h2" style={{ flex: 1 }}>{p.name}</T>
-                  <T v="title" color="brandPrimary">{money(p.price)} <T v="caption">{p.currency}</T></T>
+                  <T v="title" color="brandPrimary">{money(billing === "yearly" && p.yearly_price ? p.yearly_price : p.price)} <T v="caption">{p.currency}{billing === "yearly" && p.yearly_price ? " / سنة" : ""}</T></T>
+                </View>
+                <View style={{ flexDirection: "row", gap: spacing.sm }}>
+                  {billing === "yearly" && !p.yearly_price && <Badge text="شهري فقط" tone="warning" />}
+                  {savePct(p) > 0 && <Badge testID={`save-badge-${p.id}`} text={`وفّر ${savePct(p)}% بالدفع السنوي`} tone="success" />}
                 </View>
                 <T v="caption">{p.days} يوماً · حتى {p.max_employees} موظفين</T>
                 {p.features?.map((f: string, i: number) => (
@@ -67,7 +80,7 @@ export default function Upgrade() {
                     <T>{f}</T>
                   </View>
                 ))}
-                <Btn testID={`choose-plan-${p.id}`} title="اختيار هذه الخطة" disabled={hasPending} onPress={() => setSel(p)} />
+                <Btn testID={`choose-plan-${p.id}`} title="اختيار هذه الخطة" disabled={hasPending || (billing === "yearly" && !p.yearly_price)} onPress={() => setSel(p)} />
               </Card>
             ))
           )}
@@ -97,10 +110,10 @@ export default function Upgrade() {
         visible={!!sel}
         onClose={() => setSel(null)}
         title={`الدفع · ${sel?.name ?? ""}`}
-        footer={<Btn testID="submit-upgrade-button" title="إرسال طلب الترقية" icon="send-outline" loading={submit.isPending} onPress={() => (ref.trim() ? submit.mutate({ plan_id: sel.id, payment_ref: ref, notes }) : toast("أدخل مرجع عملية الدفع", "error"))} />}
+        footer={<Btn testID="submit-upgrade-button" title="إرسال طلب الترقية" icon="send-outline" loading={submit.isPending} onPress={() => (ref.trim() ? submit.mutate({ plan_id: sel.id, payment_ref: ref, notes, billing: billing === "yearly" && sel.yearly_price ? "yearly" : "monthly" }) : toast("أدخل مرجع عملية الدفع", "error"))} />}
       >
         <Card style={{ gap: spacing.sm }}>
-          <T v="label">المبلغ المطلوب: {money(sel?.price)} {sel?.currency}</T>
+          <T v="label" testID="upgrade-amount">المبلغ المطلوب: {money(priceOf(sel))} {sel?.currency} {billing === "yearly" && sel?.yearly_price ? "(اشتراك سنوي)" : ""}</T>
           {!!pay.data?.instructions && <T>{pay.data.instructions}</T>}
           {!!pay.data?.payment_address && (
             <View style={{ gap: 2 }}>

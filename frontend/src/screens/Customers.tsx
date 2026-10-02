@@ -7,9 +7,11 @@ import { AccountButton } from "@/src/components/AccountButton";
 import { CollectSheet } from "@/src/components/CollectSheet";
 import { SyncBanner } from "@/src/components/SyncBanner";
 import { useApi, useBottomChrome, useMutate } from "@/src/hooks";
+import { currentCoords } from "@/src/location";
 import { offlineCustomer } from "@/src/offlineActions";
+import { useTypeName } from "@/src/pricing";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
-import { Badge, Btn, Card, Empty, ErrorBox, Field, Header, IconBtn, Loading, Row, Sheet, T, useToast } from "@/src/ui";
+import { Badge, Btn, Card, Empty, ErrorBox, Field, Header, IconBtn, Loading, Row, Select, Sheet, T, useToast } from "@/src/ui";
 
 const typeLabel: Record<string, string> = { SALE: "فاتورة", COLLECTION: "تحصيل", RETURN: "مرتجع" };
 
@@ -56,6 +58,8 @@ export default function Customers({ debtsOnly = false }: { debtsOnly?: boolean }
   const toast = useToast();
   const bottom = useBottomChrome();
   const list = useApi<any[]>("/customers");
+  const types = useApi<any[]>("/customer-types");
+  const typeName = useTypeName();
   const [q, setQ] = useState("");
   const [form, setForm] = useState<any | null>(null);
   const [statement, setStatement] = useState<string | null>(null);
@@ -72,10 +76,10 @@ export default function Customers({ debtsOnly = false }: { debtsOnly?: boolean }
 
   const submit = () => {
     if (!form.name.trim()) return toast("اسم العميل مطلوب", "error");
-    const body = { name: form.name, phone: form.phone, address: form.address, location: form.location ?? "" };
+    const body = { name: form.name, phone: form.phone, address: form.address, location: form.location ?? "", type_id: form.type_id ?? null, lat: form.lat ?? null, lng: form.lng ?? null };
     if (form.id) update.mutate({ ...body, id: form.id });
     else {
-      offlineCustomer({ name: form.name, phone: form.phone, address: form.address }).then(() => {
+      offlineCustomer({ name: form.name, phone: form.phone, address: form.address, type_id: form.type_id ?? null, lat: form.lat ?? null, lng: form.lng ?? null }).then(() => {
         toast("تمت إضافة العميل");
         setForm(null);
       });
@@ -121,7 +125,7 @@ export default function Customers({ debtsOnly = false }: { debtsOnly?: boolean }
               testID={`customer-row-${item.id}`}
               icon="person-outline"
               title={item.name}
-              subtitle={[item.phone, item.address].filter(Boolean).join(" · ") || "—"}
+              subtitle={[typeName(item.type_id), item.phone, item.address].filter(Boolean).join(" · ") || "—"}
               onPress={() => (item.pending ? toast("العميل بانتظار المزامنة", "error") : setStatement(item.id))}
               right={
                 <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
@@ -146,6 +150,27 @@ export default function Customers({ debtsOnly = false }: { debtsOnly?: boolean }
             <Field testID="customer-name-input" label="اسم العميل / المحل" value={form.name} onChangeText={(v) => setForm({ ...form, name: v })} />
             <Field testID="customer-phone-input" label="الهاتف" keyboardType="phone-pad" value={form.phone} onChangeText={(v) => setForm({ ...form, phone: v })} />
             <Field testID="customer-address-input" label="العنوان" value={form.address} onChangeText={(v) => setForm({ ...form, address: v })} />
+            <Select
+              testID="customer-type-select"
+              label="فئة العميل (قائمة الأسعار)"
+              placeholder="سعر عادي"
+              value={typeName(form.type_id) ?? null}
+              options={[{ id: null, name: "سعر عادي" }, ...(types.data ?? [])]}
+              getLabel={(t: any) => t.name}
+              onSelect={(t: any) => setForm({ ...form, type_id: t.id })}
+            />
+            <Btn
+              testID="customer-use-location-button"
+              small
+              variant="secondary"
+              icon="location-outline"
+              title={form.lat != null ? `الموقع محفوظ (${Number(form.lat).toFixed(4)}, ${Number(form.lng).toFixed(4)}) · تحديث` : "حفظ موقعي الحالي كموقع للعميل"}
+              onPress={async () => {
+                const c = await currentCoords();
+                if (c) setForm({ ...form, ...c });
+                else toast("فعّل إذن الموقع أولاً", "error");
+              }}
+            />
           </>
         )}
       </Sheet>

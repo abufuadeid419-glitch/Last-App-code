@@ -5,6 +5,8 @@ import { money } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { AccountButton } from "@/src/components/AccountButton";
 import { LocationCard } from "@/src/components/LocationCard";
+import { MyRoute } from "@/src/components/MyRoute";
+import { AgentStock } from "@/src/components/StockRequests";
 import { SyncBanner } from "@/src/components/SyncBanner";
 import { useApi, useBottomChrome } from "@/src/hooks";
 import { spacing, useTheme } from "@/src/theme";
@@ -51,19 +53,8 @@ export default function Overview() {
               {!isAgent && <Stat testID="stat-returns" label="المرتجعات" value={money(s.returns_total)} icon="return-down-back-outline" tone="error" />}
             </View>
 
-            {isAgent && (
-              <Section title="مخزوني الحالي">
-                <Card style={{ padding: 0, overflow: "hidden" }}>
-                  {!inv.data?.length ? (
-                    <Empty icon="cube-outline" text="لا يوجد مخزون لديك. اطلب من المالك تسليمك بضاعة." />
-                  ) : (
-                    inv.data.map((i) => (
-                      <Row key={i.product_id} testID={`my-stock-${i.product_id}`} icon="cube-outline" title={i.product_name} subtitle={`السعر: ${money(i.sale_price)}`} right={<T v="h2" color="brandPrimary">{money(i.quantity)}</T>} />
-                    ))
-                  )}
-                </Card>
-              </Section>
-            )}
+            {isAgent && <MyRoute />}
+            {isAgent && <AgentStock />}
 
             {!isAgent && s.low_stock?.length > 0 && (
               <Section title="تنبيهات نقص المخزون">

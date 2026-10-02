@@ -31,6 +31,20 @@ export async function startTracking() {
   } catch {}
 }
 
+// One-off current position (asks permission if still undetermined).
+export async function currentCoords() {
+  let perm = await Location.getForegroundPermissionsAsync();
+  if (!perm.granted && perm.canAskAgain) perm = await Location.requestForegroundPermissionsAsync();
+  if (!perm.granted) return null;
+  try {
+    const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    last = { lat: p.coords.latitude, lng: p.coords.longitude };
+    return last;
+  } catch {
+    return last;
+  }
+}
+
 export function stopTracking() {
   sub?.remove();
   sub = null;

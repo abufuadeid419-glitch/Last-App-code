@@ -283,12 +283,12 @@ export function ErrorBox({ message, onRetry }: { message: string; onRetry: () =>
 }
 
 // ---------------- Badge ----------------
-export function Badge({ text, tone = "brand" }: { text: string; tone?: "brand" | "success" | "warning" | "error" }) {
+export function Badge({ text, tone = "brand", testID }: { text: string; tone?: "brand" | "success" | "warning" | "error"; testID?: string }) {
   const { colors } = useTheme();
   const bg = tone === "brand" ? colors.brandTertiary : colors[tone];
   const fg = tone === "brand" ? colors.onBrandTertiary : colors[`on${tone[0].toUpperCase()}${tone.slice(1)}` as keyof ThemeColors];
   return (
-    <View style={{ backgroundColor: bg, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 2, alignSelf: "flex-start" }}>
+    <View testID={testID} style={{ backgroundColor: bg, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 2, alignSelf: "flex-start" }}>
       <Text style={{ color: fg, fontFamily: fonts.semibold, fontSize: 12 }}>{text}</Text>
     </View>
   );
