@@ -79,6 +79,7 @@ class ProductIn(BaseModel):
 
 
 class CustomerIn(BaseModel):
+    id: Optional[str] = None
     name: str
     phone: str = ""
     address: str = ""
@@ -114,20 +115,27 @@ class DeliveryIn(BaseModel):
     notes: str = ""
 
 
-class SaleIn(BaseModel):
+class GeoMixin(BaseModel):
+    id: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    client_created_at: Optional[str] = None
+
+
+class SaleIn(GeoMixin):
     customer_id: str
     items: List[LineIn]
     paid_amount: float = Field(ge=0, default=0)
     notes: str = ""
 
 
-class CollectionIn(BaseModel):
+class CollectionIn(GeoMixin):
     customer_id: str
     amount: float = Field(gt=0)
     notes: str = ""
 
 
-class ReturnIn(BaseModel):
+class ReturnIn(GeoMixin):
     customer_id: str
     items: List[LineIn]
     reason: str = ""
@@ -368,7 +376,11 @@ async def list_customers(user=Depends(ANY_ORG)):
 
 @api.post("/customers")
 async def create_customer(body: CustomerIn, user=Depends(ANY_ORG)):
-    doc = {"id": new_id(), "org_id": user["org_id"], **body.model_dump(), "balance": 0.0,
+    if body.id:
+        ex = await db.customers.find_one({"id": body.id, "org_id": user["org_id"]}, NO_ID)
+        if ex:
+            return ex
+    doc = {"id": body.id or new_id(), "org_id": user["org_id"], **body.model_dump(exclude={"id"}), "balance": 0.0,
            "created_by": user["user_id"], "created_at": iso()}
     await db.customers.insert_one(dict(doc))
     return doc
@@ -376,7 +388,7 @@ async def create_customer(body: CustomerIn, user=Depends(ANY_ORG)):
 
 @api.put("/customers/{cid}")
 async def update_customer(cid: str, body: CustomerIn, user=Depends(STAFF)):
-    await db.customers.update_one({"id": cid, "org_id": user["org_id"]}, {"$set": body.model_dump()})
+    await db.customers.update_one({"id": cid, "org_id": user["org_id"]}, {"$set": body.model_dump(exclude={"id"})})
     return await db.customers.find_one({"id": cid}, NO_ID)
 
 
@@ -505,6 +517,10 @@ async def distributors_inventory(user=Depends(STAFF)):
     return await db.distributor_inventory.find({"org_id": user["org_id"], "quantity": {"$gt": 0}}, NO_ID).to_list(2000)
 
 
+def geo(body) -> dict:
+    return {"lat": body.lat, "lng": body.lng, "client_created_at": body.client_created_at}
+
+
 # ---------------- Sales ----------------
 async def next_no(org_id: str, kind: str, prefix: str) -> str:
     r = await db.counters.find_one_and_update({"org_id": org_id, "kind": kind}, {"$inc": {"n": 1}}, upsert=True, return_document=True)
@@ -521,6 +537,10 @@ async def list_sales(user=Depends(ANY_ORG)):
 
 @api.post("/sales")
 async def create_sale(body: SaleIn, user=Depends(AGENT)):
+    if body.id:
+        ex = await db.sales.find_one({"id": body.id, "org_id": user["org_id"]}, NO_ID)
+        if ex:
+            return ex
     cust = await db.customers.find_one({"id": body.customer_id, "org_id": user["org_id"]}, NO_ID)
     if not cust:
         raise HTTPException(404, "العميل غير موجود")
@@ -539,7 +559,7 @@ async def create_sale(body: SaleIn, user=Depends(AGENT)):
     for it in items:
         await db.distributor_inventory.update_one({"distributor_id": user["user_id"], "product_id": it["product_id"]}, {"$inc": {"quantity": -it["quantity"]}})
     await db.customers.update_one({"id": cust["id"]}, {"$inc": {"balance": round(total - paid, 2)}})
-    doc = {"id": new_id(), "org_id": user["org_id"], "invoice_no": await next_no(user["org_id"], "sale", "INV"),
+    doc = {"id": body.id or new_id(), **geo(body), "org_id": user["org_id"], "invoice_no": await next_no(user["org_id"], "sale", "INV"),
            "customer_id": cust["id"], "customer_name": cust["name"], "distributor_id": user["user_id"],
            "distributor_name": user.get("name"), "items": items, "total": total, "paid_amount": paid,
            "remaining": round(total - paid, 2), "payment_type": "CASH" if paid >= total else "CREDIT",
@@ -562,10 +582,14 @@ async def create_collection(body: CollectionIn, user=Depends(ANY_ORG)):
     cust = await db.customers.find_one({"id": body.customer_id, "org_id": user["org_id"]}, NO_ID)
     if not cust:
         raise HTTPException(404, "العميل غير موجود")
+    if body.id:
+        ex = await db.collections.find_one({"id": body.id, "org_id": user["org_id"]}, NO_ID)
+        if ex:
+            return ex
     if body.amount > cust["balance"] + 0.001:
         raise HTTPException(400, "المبلغ أكبر من دين العميل")
     await db.customers.update_one({"id": cust["id"]}, {"$inc": {"balance": -body.amount}})
-    doc = {"id": new_id(), "org_id": user["org_id"], "receipt_no": await next_no(user["org_id"], "col", "RCV"),
+    doc = {"id": body.id or new_id(), **geo(body), "org_id": user["org_id"], "receipt_no": await next_no(user["org_id"], "col", "RCV"),
            "customer_id": cust["id"], "customer_name": cust["name"], "amount": body.amount, "notes": body.notes,
            "collector_id": user["user_id"], "collector_name": user.get("name"), "created_at": iso()}
     await db.collections.insert_one(dict(doc))
@@ -586,6 +610,10 @@ async def create_return(body: ReturnIn, user=Depends(AGENT)):
     cust = await db.customers.find_one({"id": body.customer_id, "org_id": user["org_id"]}, NO_ID)
     if not cust:
         raise HTTPException(404, "العميل غير موجود")
+    if body.id:
+        ex = await db.sales_returns.find_one({"id": body.id, "org_id": user["org_id"]}, NO_ID)
+        if ex:
+            return ex
     items, total = [], 0.0
     for it in body.items:
         prod = await db.products.find_one({"id": it.product_id, "org_id": user["org_id"]}, NO_ID)
@@ -599,7 +627,7 @@ async def create_return(body: ReturnIn, user=Depends(AGENT)):
             {"$inc": {"quantity": it.quantity}, "$set": {"org_id": user["org_id"], "product_name": prod["name"]}}, upsert=True)
     total = round(total, 2)
     await db.customers.update_one({"id": cust["id"]}, {"$inc": {"balance": -total}})
-    doc = {"id": new_id(), "org_id": user["org_id"], "return_no": await next_no(user["org_id"], "ret", "RET"),
+    doc = {"id": body.id or new_id(), **geo(body), "org_id": user["org_id"], "return_no": await next_no(user["org_id"], "ret", "RET"),
            "customer_id": cust["id"], "customer_name": cust["name"], "distributor_id": user["user_id"],
            "distributor_name": user.get("name"), "items": items, "total": total, "reason": body.reason, "created_at": iso()}
     await db.sales_returns.insert_one(dict(doc))
@@ -658,6 +686,318 @@ async def agents_performance(user=Depends(STAFF)):
     return out
 
 
+# ---------------- Extensions: org profile/logo, plans, upgrades, reports, GPS ----------------
+import base64
+import requests
+from fastapi.concurrency import run_in_threadpool
+
+STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
+STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
+EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
+APP_NAME = "smart-system"
+_storage_key = None
+
+
+def init_storage():
+    global _storage_key
+    if _storage_key:
+        return _storage_key
+    resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY}, timeout=30)
+    resp.raise_for_status()
+    _storage_key = resp.json()["storage_key"]
+    return _storage_key
+
+
+def put_object(path: str, data: bytes, content_type: str) -> dict:
+    key = init_storage()
+    resp = requests.put(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key, "Content-Type": content_type}, data=data, timeout=120)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_object(path: str):
+    key = init_storage()
+    resp = requests.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=60)
+    resp.raise_for_status()
+    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+
+
+class OrgProfileIn(BaseModel):
+    name: str
+    phone: str = ""
+    email: str = ""
+    address: str = ""
+    tax_no: str = ""
+    cr_no: str = ""
+    invoice_footer: str = ""
+
+
+class LogoIn(BaseModel):
+    data: str  # base64
+    content_type: str = "image/jpeg"
+
+
+class PlanIn(BaseModel):
+    name: str
+    price: float = Field(ge=0)
+    currency: str = "USD"
+    days: int = Field(gt=0, default=30)
+    max_employees: int = Field(gt=0, default=5)
+    features: List[str] = []
+    active: bool = True
+
+
+class PaymentSettingsIn(BaseModel):
+    payment_address: str = ""
+    whatsapp: str = ""
+    instructions: str = ""
+
+
+class UpgradeIn(BaseModel):
+    plan_id: str
+    payment_ref: str
+    notes: str = ""
+
+
+class ReviewIn(BaseModel):
+    action: str  # approve | reject
+    note: str = ""
+
+
+class LocationIn(BaseModel):
+    lat: float
+    lng: float
+    accuracy: Optional[float] = None
+
+
+PROFILE_FIELDS = ["name", "phone", "email", "address", "tax_no", "cr_no", "invoice_footer"]
+
+
+@api.get("/org/profile")
+async def org_profile(user=Depends(ANY_ORG)):
+    org = await db.organizations.find_one({"id": user["org_id"]}, NO_ID)
+    return {**{k: org.get(k, "") for k in PROFILE_FIELDS}, "has_logo": bool(org.get("logo_path"))}
+
+
+@api.put("/org/profile")
+async def update_org_profile(body: OrgProfileIn, user=Depends(OWNER)):
+    if not body.name.strip():
+        raise HTTPException(400, "اسم المؤسسة مطلوب")
+    await db.organizations.update_one({"id": user["org_id"]}, {"$set": body.model_dump()})
+    return await org_profile(user)
+
+
+@api.post("/org/logo")
+async def upload_logo(body: LogoIn, user=Depends(OWNER)):
+    try:
+        raw = base64.b64decode(body.data.split(",")[-1])
+    except Exception:
+        raise HTTPException(400, "صورة غير صالحة")
+    if len(raw) > 1_500_000:
+        raise HTTPException(400, "حجم الشعار كبير جداً (الحد 1.5MB)")
+    ext = "png" if "png" in body.content_type else "jpg"
+    path = f"{APP_NAME}/uploads/{user['org_id']}/{uuid.uuid4().hex}.{ext}"
+    try:
+        res = await run_in_threadpool(put_object, path, raw, body.content_type)
+    except requests.HTTPError as e:
+        if e.response is not None and e.response.status_code == 402:
+            raise HTTPException(402, "رصيد التخزين غير كافٍ")
+        raise HTTPException(502, "فشل رفع الشعار")
+    await db.organizations.update_one({"id": user["org_id"]}, {"$set": {"logo_path": res["path"], "logo_type": body.content_type}})
+    return {"ok": True}
+
+
+@api.get("/org/logo")
+async def get_logo(user=Depends(ANY_ORG)):
+    org = await db.organizations.find_one({"id": user["org_id"]}, NO_ID)
+    if not org.get("logo_path"):
+        return {"data_uri": None}
+    try:
+        data, ctype = await run_in_threadpool(get_object, org["logo_path"])
+    except Exception:
+        return {"data_uri": None}
+    return {"data_uri": f"data:{ctype};base64,{base64.b64encode(data).decode()}"}
+
+
+# ---- Plans (developer managed, visible to owners) ----
+@api.get("/plans")
+async def list_plans(user=Depends(get_user)):
+    q = {} if user.get("role") == "DEVELOPER" else {"active": True}
+    return await db.plans.find(q, NO_ID).sort("price", 1).to_list(100)
+
+
+@api.post("/dev/plans")
+async def create_plan(body: PlanIn, user=Depends(DEV)):
+    doc = {"id": new_id(), **body.model_dump(), "created_at": iso()}
+    await db.plans.insert_one(dict(doc))
+    return doc
+
+
+@api.put("/dev/plans/{pid}")
+async def update_plan(pid: str, body: PlanIn, user=Depends(DEV)):
+    await db.plans.update_one({"id": pid}, {"$set": body.model_dump()})
+    return await db.plans.find_one({"id": pid}, NO_ID)
+
+
+@api.delete("/dev/plans/{pid}")
+async def delete_plan(pid: str, user=Depends(DEV)):
+    await db.plans.delete_one({"id": pid})
+    return {"ok": True}
+
+
+@api.get("/settings/payment")
+async def payment_settings(user=Depends(get_user)):
+    s = await db.app_settings.find_one({"key": "payment"}, NO_ID) or {}
+    return {k: s.get(k, "") for k in ("payment_address", "whatsapp", "instructions")}
+
+
+@api.put("/dev/settings/payment")
+async def update_payment_settings(body: PaymentSettingsIn, user=Depends(DEV)):
+    await db.app_settings.update_one({"key": "payment"}, {"$set": {"key": "payment", **body.model_dump()}}, upsert=True)
+    return body.model_dump()
+
+
+# ---- Upgrade requests (owner may submit even when expired) ----
+async def owner_any(user=Depends(get_user)):
+    if user.get("role") != "OWNER":
+        raise HTTPException(403, "ليس لديك صلاحية")
+    return user
+
+
+@api.get("/upgrade-requests")
+async def list_upgrades(user=Depends(get_user)):
+    if user.get("role") == "DEVELOPER":
+        q = {}
+    elif user.get("role") == "OWNER":
+        q = {"org_id": user["org_id"]}
+    else:
+        raise HTTPException(403, "ليس لديك صلاحية")
+    return await db.upgrade_requests.find(q, NO_ID).sort("created_at", -1).to_list(500)
+
+
+@api.post("/upgrade-requests")
+async def create_upgrade(body: UpgradeIn, user=Depends(owner_any)):
+    plan = await db.plans.find_one({"id": body.plan_id, "active": True}, NO_ID)
+    if not plan:
+        raise HTTPException(404, "الخطة غير متاحة")
+    if not body.payment_ref.strip():
+        raise HTTPException(400, "أدخل رقم/مرجع عملية الدفع")
+    if await db.upgrade_requests.find_one({"org_id": user["org_id"], "status": "PENDING"}):
+        raise HTTPException(400, "لديك طلب قيد المراجعة بالفعل")
+    org = await db.organizations.find_one({"id": user["org_id"]}, NO_ID)
+    doc = {"id": new_id(), "org_id": org["id"], "org_name": org["name"], "owner_email": user["email"],
+           "plan_id": plan["id"], "plan_name": plan["name"], "price": plan["price"], "currency": plan["currency"],
+           "days": plan["days"], "max_employees": plan["max_employees"], "payment_ref": body.payment_ref.strip(),
+           "notes": body.notes, "status": "PENDING", "created_at": iso()}
+    await db.upgrade_requests.insert_one(dict(doc))
+    return doc
+
+
+@api.patch("/dev/upgrade-requests/{rid}")
+async def review_upgrade(rid: str, body: ReviewIn, user=Depends(DEV)):
+    req = await db.upgrade_requests.find_one({"id": rid, "status": "PENDING"}, NO_ID)
+    if not req:
+        raise HTTPException(404, "الطلب غير موجود أو تمت مراجعته")
+    if body.action == "approve":
+        org = await db.organizations.find_one({"id": req["org_id"]}, NO_ID)
+        base = max(datetime.fromisoformat(org["expires_at"]), now())
+        await db.organizations.update_one({"id": org["id"]}, {"$set": {
+            "plan": "LICENSE", "plan_name": req["plan_name"], "max_employees": req["max_employees"], "status": "ACTIVE",
+            "expires_at": (base + timedelta(days=req["days"])).isoformat()}})
+        status = "APPROVED"
+    elif body.action == "reject":
+        status = "REJECTED"
+    else:
+        raise HTTPException(400, "إجراء غير صالح")
+    await db.upgrade_requests.update_one({"id": rid}, {"$set": {"status": status, "review_note": body.note, "reviewed_at": iso()}})
+    return await db.upgrade_requests.find_one({"id": rid}, NO_ID)
+
+
+# ---- Reports ----
+def _bucket(dt: datetime, period: str) -> str:
+    if period == "month":
+        return dt.strftime("%Y-%m")
+    if period == "week":
+        return (dt - timedelta(days=dt.weekday())).date().isoformat()
+    return dt.date().isoformat()
+
+
+@api.get("/stats/reports")
+async def reports(period: str = "day", user=Depends(STAFF)):
+    if period not in ("day", "week", "month"):
+        raise HTTPException(400, "فترة غير صالحة")
+    n = {"day": 7, "week": 8, "month": 6}[period]
+    today = now()
+    keys = []
+    for i in range(n - 1, -1, -1):
+        if period == "day":
+            d = today - timedelta(days=i)
+        elif period == "week":
+            d = today - timedelta(weeks=i)
+        else:
+            y, m = today.year, today.month - i
+            while m <= 0:
+                m += 12
+                y -= 1
+            d = today.replace(year=y, month=m, day=1)
+        keys.append(_bucket(d, period))
+    start = keys[0] if period != "month" else keys[0] + "-01"
+    buckets = {k: {"key": k, "sales": 0.0, "collections": 0.0, "returns": 0.0, "profit": 0.0, "count": 0} for k in keys}
+    org = user["org_id"]
+    is_owner = user.get("role") == "OWNER"
+    costs = {p["id"]: p["cost_price"] for p in await db.products.find({"org_id": org}, NO_ID).to_list(2000)}
+    async for s in db.sales.find({"org_id": org, "created_at": {"$gte": start}}, NO_ID):
+        k = _bucket(datetime.fromisoformat(s["created_at"]), period)
+        if k in buckets:
+            b = buckets[k]
+            b["sales"] += s["total"]
+            b["count"] += 1
+            b["profit"] += s["total"] - sum(costs.get(i["product_id"], 0) * i["quantity"] for i in s["items"])
+    async for c in db.collections.find({"org_id": org, "created_at": {"$gte": start}}, NO_ID):
+        k = _bucket(datetime.fromisoformat(c["created_at"]), period)
+        if k in buckets:
+            buckets[k]["collections"] += c["amount"]
+    async for r in db.sales_returns.find({"org_id": org, "created_at": {"$gte": start}}, NO_ID):
+        k = _bucket(datetime.fromisoformat(r["created_at"]), period)
+        if k in buckets:
+            buckets[k]["returns"] += r["total"]
+            buckets[k]["profit"] -= r["total"] - sum(costs.get(i["product_id"], 0) * i["quantity"] for i in r["items"])
+    rows = []
+    for k in keys:
+        b = buckets[k]
+        for f in ("sales", "collections", "returns", "profit"):
+            b[f] = round(b[f], 2)
+        if not is_owner:
+            b["profit"] = None
+        rows.append(b)
+    totals = {f: round(sum((r[f] or 0) for r in rows), 2) for f in ("sales", "collections", "returns", "profit", "count")}
+    if not is_owner:
+        totals["profit"] = None
+    return {"period": period, "rows": rows, "totals": totals}
+
+
+# ---- GPS tracking ----
+@api.post("/locations")
+async def post_location(body: LocationIn, user=Depends(AGENT)):
+    loc = {"lat": body.lat, "lng": body.lng, "accuracy": body.accuracy, "at": iso()}
+    await db.agent_locations.insert_one({"org_id": user["org_id"], "user_id": user["user_id"], **loc})
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"last_location": loc}})
+    return {"ok": True}
+
+
+@api.get("/tracking/agents")
+async def tracking_agents(user=Depends(STAFF)):
+    agents = await db.users.find({"org_id": user["org_id"], "employee_type": "FIELD_AGENT"}, NO_ID).to_list(200)
+    today = now().date().isoformat()
+    out = []
+    for a in agents:
+        visits = await db.sales.find({"distributor_id": a["user_id"], "created_at": {"$gte": today}, "lat": {"$ne": None}},
+                                     {"_id": 0, "invoice_no": 1, "customer_name": 1, "lat": 1, "lng": 1, "total": 1}).to_list(100)
+        out.append({"user_id": a["user_id"], "name": a.get("name"), "email": a["email"],
+                    "last_location": a.get("last_location"), "today_visits": visits})
+    return out
+
+
 @api.get("/")
 async def root():
     return {"message": "Smart System API"}
@@ -676,6 +1016,10 @@ async def startup():
     await db.user_sessions.create_index("expires_at", expireAfterSeconds=0)
     await db.licenses.create_index("code", unique=True)
     await db.invitations.create_index("code", unique=True)
+    try:
+        await run_in_threadpool(init_storage)
+    except Exception as e:
+        logger.error(f"storage init failed: {e}")
 
 
 @app.on_event("shutdown")

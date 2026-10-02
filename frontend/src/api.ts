@@ -23,7 +23,7 @@ export async function api<T = any>(
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     });
   } catch {
-    throw new Error("تعذر الاتصال بالخادم، تحقق من الإنترنت");
+    throw Object.assign(new Error("تعذر الاتصال بالخادم، تحقق من الإنترنت"), { offline: true });
   }
   const data = await res.json().catch(() => null);
   if (res.status === 401 && token) onUnauthorized?.();

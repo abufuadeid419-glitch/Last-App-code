@@ -5,7 +5,9 @@ import { fmtDate, money } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { AccountButton } from "@/src/components/AccountButton";
 import { CollectSheet } from "@/src/components/CollectSheet";
+import { SyncBanner } from "@/src/components/SyncBanner";
 import { useApi, useBottomChrome, useMutate } from "@/src/hooks";
+import { offlineCustomer } from "@/src/offlineActions";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
 import { Badge, Btn, Card, Empty, ErrorBox, Field, Header, IconBtn, Loading, Row, Sheet, T, useToast } from "@/src/ui";
 
@@ -58,7 +60,7 @@ export default function Customers({ debtsOnly = false }: { debtsOnly?: boolean }
   const [form, setForm] = useState<any | null>(null);
   const [statement, setStatement] = useState<string | null>(null);
   const [collect, setCollect] = useState<any | null>(null);
-  const create = useMutate("POST", "/customers", "تمت إضافة العميل", () => setForm(null));
+  const create = { isPending: false };
   const update = useMutate<any>("PUT", (b) => `/customers/${b.id}`, "تم تحديث العميل", () => setForm(null));
   const canEdit = user?.role === "OWNER" || user?.employee_type === "ACCOUNTANT";
 
@@ -72,7 +74,12 @@ export default function Customers({ debtsOnly = false }: { debtsOnly?: boolean }
     if (!form.name.trim()) return toast("اسم العميل مطلوب", "error");
     const body = { name: form.name, phone: form.phone, address: form.address, location: form.location ?? "" };
     if (form.id) update.mutate({ ...body, id: form.id });
-    else create.mutate(body);
+    else {
+      offlineCustomer({ name: form.name, phone: form.phone, address: form.address }).then(() => {
+        toast("تمت إضافة العميل");
+        setForm(null);
+      });
+    }
   };
 
   return (
@@ -87,6 +94,7 @@ export default function Customers({ debtsOnly = false }: { debtsOnly?: boolean }
           </>
         }
       />
+      <SyncBanner />
       <View style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
         <TextInput
           testID="customer-search-input"
@@ -114,7 +122,7 @@ export default function Customers({ debtsOnly = false }: { debtsOnly?: boolean }
               icon="person-outline"
               title={item.name}
               subtitle={[item.phone, item.address].filter(Boolean).join(" · ") || "—"}
-              onPress={() => setStatement(item.id)}
+              onPress={() => (item.pending ? toast("العميل بانتظار المزامنة", "error") : setStatement(item.id))}
               right={
                 <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
                   <Badge text={money(item.balance)} tone={item.balance > 0 ? "warning" : "success"} />

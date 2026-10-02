@@ -36,7 +36,12 @@ function Gate() {
   useEffect(() => {
     if (user === undefined) return;
     const target = homeFor(user);
-    if (segments[0] !== target) router.replace(`/${target}` as any);
+    const seg = segments[0] as string | undefined;
+    // Shared stack screens reachable from inside the app.
+    const allowed =
+      (seg === "reports" && ["owner", "acct"].includes(target)) ||
+      (seg === "upgrade" && user?.role === "OWNER");
+    if (seg !== target && !allowed) router.replace(`/${target}` as any);
   }, [user, segments, router]);
 
   if (user === undefined) {

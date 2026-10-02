@@ -4,6 +4,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { Platform } from "react-native";
 
 import { api, setToken, setUnauthorizedHandler } from "@/src/api";
+import { clearOffline } from "@/src/offline";
 import { queryClient } from "@/src/query-client";
 import { storage } from "@/src/utils/storage";
 
@@ -48,6 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const clear = useCallback(async () => {
     await storage.secureRemove(TOKEN_KEY);
+    await clearOffline();
     setToken(null);
     queryClient.clear();
     setUserState(null);

@@ -3,8 +3,13 @@ import { View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 
 import { money } from "@/src/api";
+import { useAuth } from "@/src/auth";
 import { AccountButton } from "@/src/components/AccountButton";
-import { useApi, useBottomChrome, useMutate } from "@/src/hooks";
+import { InvoiceActions } from "@/src/components/InvoiceActions";
+import { SyncBanner } from "@/src/components/SyncBanner";
+import { useApi, useBottomChrome } from "@/src/hooks";
+import { useSyncState } from "@/src/offline";
+import { offlineSale } from "@/src/offlineActions";
 import { radius, spacing, useTheme } from "@/src/theme";
 import { Btn, Card, Empty, Field, Header, IconBtn, Loading, Select, T, useToast } from "@/src/ui";
 
@@ -21,15 +26,11 @@ export default function NewSale() {
   const [paid, setPaid] = useState("");
   const [notes, setNotes] = useState("");
   const [last, setLast] = useState<any>(null);
+  const { user } = useAuth();
+  const { online } = useSyncState();
 
   const total = useMemo(() => lines.reduce((s, l) => s + (+l.quantity || 0) * (+l.price || 0), 0), [lines]);
-  const sale = useMutate("POST", "/sales", "تم حفظ الفاتورة", (r) => {
-    setLast(r);
-    setCust(null);
-    setLines([]);
-    setPaid("");
-    setNotes("");
-  });
+  const [saving, setSaving] = useState(false);
 
   const addLine = (p: any) => {
     if (lines.find((l) => l.product_id === p.product_id)) return toast("المنتج مضاف مسبقاً", "error");
@@ -37,12 +38,31 @@ export default function NewSale() {
   };
   const upd = (i: number, k: "quantity" | "price", v: string) => setLines(lines.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
 
-  const submit = () => {
+  const submit = async () => {
     if (!cust) return toast("اختر العميل", "error");
     if (!lines.length) return toast("أضف منتجاً واحداً على الأقل", "error");
     const bad = lines.find((l) => !(+l.quantity > 0) || +l.quantity > l.available);
     if (bad) return toast(`كمية غير صالحة: ${bad.name}`, "error");
-    sale.mutate({ customer_id: cust.id, items: lines.map((l) => ({ product_id: l.product_id, quantity: +l.quantity, price: +l.price || 0 })), paid_amount: paid === "" ? total : +paid || 0, notes });
+    setSaving(true);
+    try {
+      const doc = await offlineSale({
+        customer: cust,
+        lines: lines.map((l) => ({ product_id: l.product_id, product_name: l.name, quantity: +l.quantity, price: +l.price || 0 })),
+        paid: paid === "" ? null : +paid || 0,
+        notes,
+        userName: user?.name,
+      });
+      setLast(doc);
+      setCust(null);
+      setLines([]);
+      setPaid("");
+      setNotes("");
+      toast(online ? "تم حفظ الفاتورة" : "تم حفظ الفاتورة دون اتصال وستتم مزامنتها لاحقاً");
+    } catch (e: any) {
+      toast(e.message, "error");
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (customers.isLoading || inv.isLoading) return <View style={{ flex: 1, backgroundColor: colors.surface }}><Header title="فاتورة جديدة" /><Loading /></View>;
@@ -50,11 +70,13 @@ export default function NewSale() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }} testID="new-sale-screen">
       <Header title="فاتورة جديدة" subtitle="بيع من مخزونك" right={<AccountButton />} />
+      <SyncBanner />
       <KeyboardAwareScrollView bottomOffset={120} keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg }}>
         {last && (
           <Card testID="last-invoice-card" style={{ backgroundColor: colors.brandTertiary, borderColor: colors.brandSecondary, gap: spacing.xs }}>
-            <T v="label" color="brandPrimary">تم إنشاء الفاتورة {last.invoice_no}</T>
+            <T v="label" color="brandPrimary">تم إنشاء الفاتورة {last.invoice_no}{last.pending ? " (بانتظار المزامنة)" : ""}</T>
             <T v="caption">{last.customer_name} · الإجمالي {money(last.total)} · المتبقي {money(last.remaining)}</T>
+            <InvoiceActions doc={last} />
           </Card>
         )}
         <Select testID="sale-customer-select" label="العميل" placeholder="اختر العميل" value={cust?.name ?? null} options={customers.data ?? []} getLabel={(c: any) => c.name} getSub={(c: any) => `الدين: ${money(c.balance)}`} onSelect={setCust} />
@@ -90,7 +112,7 @@ export default function NewSale() {
           <T v="label" style={{ flex: 1 }}>الإجمالي</T>
           <T v="title" color="brandPrimary" testID="sale-total">{money(total)}</T>
         </View>
-        <Btn testID="submit-sale-button" title="حفظ الفاتورة" icon="checkmark-circle-outline" onPress={submit} loading={sale.isPending} />
+        <Btn testID="submit-sale-button" title="حفظ الفاتورة" icon="checkmark-circle-outline" onPress={submit} loading={saving} />
       </View>
     </View>
   );

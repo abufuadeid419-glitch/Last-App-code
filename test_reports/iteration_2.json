@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 2 testing (PDF invoices, offline sync, reports, upgrade plans, GPS). Backend: 39/39 new pytest cases in /app/backend/tests/test_iteration2.py pass (100%). Covered endpoints: GET/PUT /api/org/profile (persist all 7 fields, OWNER-only write, agent read OK), POST /api/org/logo (bad base64 -> 400), GET /api/org/logo (data_uri shape); GET /api/plans (owner sees active only, dev sees all), POST/PUT/DELETE /api/dev/plans (non-dev denied); GET /api/settings/payment + PUT /api/dev/settings/payment (dev-only write); POST /api/upgrade-requests (single pending enforced, empty payment_ref rejected, allowed when org SUSPENDED), GET /api/upgrade-requests (owner-scoped, dev-all, agent 403), PATCH /api/dev/upgrade-requests/{id} approve->extends expires_at AND updates plan_name/max_employees, reject marks REJECTED; GET /api/stats/reports?period=day|week|month (7/8/6 rows, bad period 400, accountant profit=null, agent 403, owner profit numeric); POST /api/locations (agent only, lat/lng/accuracy stored) + GET /api/tracking/agents (owner+accountant OK with last_location+today_visits, agent 403). Idempotency: POST /api/customers, /api/sales, /api/collections, /api/sales-returns with client-provided 'id' are idempotent -- second call returns same doc, invoice_no/receipt_no/return_no unchanged, inventory & customer balance NOT double-applied; GeoMixin fields lat/lng/client_created_at persisted on sale. Frontend web preview (390x844, all 5 tokens): OWNER Overview -> open-reports-button -> /reports renders segment-day/week/month, report-chart, back button, table rows; segment switches re-render chart. OWNER account-button -> open-upgrade-button -> /upgrade correctly shows pending-request state when one already exists (hides payment-ref-input + submit by design) and current-plan card displays plan_name 'TEST_Pro+' with max_employees=20. DEV tab-billing has 3 sub-tabs: 'طلبات الترقية' (list approve/reject), 'الخطط' with add-plan-button, 'إعدادات الدفع' with payment-address/whatsapp/instructions + save-payment-settings-button. OWNER more segment-tracking renders agent list, segment-profile renders OrgProfile with save-org-profile-button; profile fields persisted via PUT. AGENT home shows gps-active badge (geolocation granted); 'بيع' tab -> new-sale-screen; after submit, last-invoice-card renders with invoice-share-pdf-button + invoice-print-button + invoice-whatsapp-button (phone templated into label). Offline queue: sale saves immediately with temporary 'INV-مؤقت-XXXX (بانتظار المزامنة)' label even when online, which is correct per offline-first design. Sync banner visibility is intermittent in automated tests; see minor issue below.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "SyncBanner", "issue": "sync-banner Pressable is included in NewSale/Overview/Sales/Customers screens but was not visible during the offline Playwright flow after queueing a sale. Pending items may be auto-synced immediately so the banner has zero dwell time; verify banner shows when network truly offline and pending>0. Reference: /app/frontend/src/components/SyncBanner.tsx:24 and /app/frontend/src/screens/NewSale.tsx:73", "testID": "sync-banner", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/upgrade (owner)", "issues": ["When a pending request already exists the UI hides payment-ref-input + submit-upgrade-button. Consider showing them disabled with a tooltip so the test flow 'choose-plan -> payment-ref -> submit' is still inspectable."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration2.py",
+    "/app/backend/tests/test_smart_system.py",
+    "/app/test_reports/pytest/iteration2.xml"
+  ],
+  "action_items": [
+    "Verify SyncBanner visibility when queue has pending items (true offline). If auto-sync runs instantly on online, consider keeping banner for ~2s after queue drains so users notice sync completion.",
+    "(Optional UX) On /upgrade show a disabled form while a pending request exists so the user understands the review workflow.",
+    "(Optional) Expose a public /api/sales GET for the agent via Authorization: the pytest tests work, but a quick manual urllib call without exact Content-Type returned 403 once; not reproducible in pytest. Likely harmless, but worth a sanity check."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 1028 lines -- consider splitting into routers (auth, dev, catalog, sales, org/profile, plans/upgrade, reports, tracking) for maintainability.",
+    "Logo upload uses Emergent object storage; init_storage uses a module global _storage_key with no refresh on 401. Low risk but add a retry if key expires.",
+    "/api/stats/reports iterates all sales/collections/returns per request without index on created_at; add a compound index {org_id:1, created_at:1} once data grows.",
+    "Idempotency check reads by id across all orgs (`db.sales.find_one({'id': body.id})`) without org_id filter; harmless because new_id is a uuid but defensive: scope by org_id to prevent cross-tenant replay.",
+    "GeoMixin fields are optional (None allowed) -- tracking map should skip rows with null lat/lng (already done via {'lat': {'$ne': None}} in /tracking/agents).",
+    "Good: all endpoints use Pydantic validation, _id excluded, counters for sequential invoice/receipt numbers, idempotency implemented for all four write endpoints, env vars enforced for Mongo URL."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration2.py (new, 39 tests)",
+    "/app/test_reports/pytest/iteration2.xml (new)",
+    "/app/test_reports/iteration_2.json (new)"
+  ],
+  "success_rate": {"backend": "100% (39/39 iter2 + 34/34 iter1)", "frontend": "~95% (all iter2 testIDs verified except transient sync-banner visibility)"},
+  "seed_data_creation": "Ran python /app/backend/seed_test.py before tests. Iter2 tests created: TEST_شركة النور profile data on org_test_1, TEST_Pro+ + TEST_Hidden plans (deleted in cleanup except any left mid-run), TEST_IDEM_P product + 50 unit purchase + 20-unit delivery to agent, TEST_IDEM_CUST + TEST_IDEM_FIXED customers, 1 sale (sale-idem-fixed-1), 1 collection (col-idem-fixed-1), 1 sales-return (ret-idem-fixed-1), 1 approved upgrade request (TXN-OK), 1 rejected (TXN-TEST-1 + FROM-EXPIRED). Org org_test_1 now has plan_name='TEST_Pro+' + max_employees=20 + extended expires_at. Re-run seed_test.py to reset test_token_new before activation tests.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend URL in frontend/.env is EXPO_PUBLIC_BACKEND_URL=https://mobile-rebuild-22.preview.emergentagent.com. Tokens: test_token_dev/owner/agent/acct/new (see /app/memory/test_credentials.md). Run pytest with -n 0 (shared STATE across classes). For frontend web token injection: localStorage.setItem('session_token', JSON.stringify('<tok>')) then reload. The OrgProfile OwnerMore screen has segments: 'موظفون' (default), 'تسليم البضاعة', 'تتبع GPS' (segment-tracking), 'ملف المؤسسة' (segment-profile). Dev billing has sub-segments: segment-requests (default), segment-plans (contains add-plan-button + plan-* list), segment-payment (save-payment-settings-button). Agent new-sale testIDs: sale-customer-select, add-line-select, line-qty-input-{i}, line-price-input-{i}, sale-paid-input, submit-sale-button; last-invoice-card holds invoice-share-pdf-button + invoice-print-button + invoice-whatsapp-button. All sales enqueue to offline queue first and are given 'INV-مؤقت-XXXX' temp label until POST /api/sales returns a real INV- number; the backend idempotency key is the client-generated UUID.",
+  "rca_of_issue": "N/A - no critical bugs. The only medium note is UI visibility of sync-banner: with instant online sync the banner may flicker. Suggested fix: in SyncBanner, keep rendering with 'تمت المزامنة' state for ~2s after queue drains before unmounting, so users see confirmation."
+}

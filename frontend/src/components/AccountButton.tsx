@@ -1,4 +1,7 @@
+import { useRouter } from "expo-router";
 import { useState } from "react";
+
+import { useSyncState } from "@/src/offline";
 import { View } from "react-native";
 
 import { fmtDate, roleLabel } from "@/src/api";
@@ -9,6 +12,8 @@ import { Badge, Btn, Card, IconBtn, Sheet, T } from "@/src/ui";
 export function AccountButton() {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
+  const router = useRouter();
+  const { pending } = useSyncState();
   const org = user?.org;
   return (
     <>
@@ -33,7 +38,13 @@ export function AccountButton() {
               <Badge text={org.status === "ACTIVE" ? "فعّال" : "موقوف"} tone={org.status === "ACTIVE" ? "success" : "error"} />
             </View>
             <T v="caption">ينتهي الاشتراك: {fmtDate(org.expires_at)}</T>
+            {user?.role === "OWNER" && (
+              <Btn testID="open-upgrade-button" small title="ترقية الخطة" icon="rocket-outline" style={{ marginTop: spacing.sm }} onPress={() => { setOpen(false); router.push("/upgrade"); }} />
+            )}
           </Card>
+        )}
+        {pending.length > 0 && (
+          <T v="caption" color="error" testID="logout-pending-warning">تنبيه: لديك {pending.length} عملية غير متزامنة ستُفقد عند تسجيل الخروج.</T>
         )}
       </Sheet>
     </>

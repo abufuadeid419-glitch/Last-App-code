@@ -4,7 +4,10 @@ import { FlatList, RefreshControl, View } from "react-native";
 import { fmtDate, money } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { AccountButton } from "@/src/components/AccountButton";
-import { useApi, useBottomChrome, useMutate } from "@/src/hooks";
+import { InvoiceActions } from "@/src/components/InvoiceActions";
+import { SyncBanner } from "@/src/components/SyncBanner";
+import { useApi, useBottomChrome } from "@/src/hooks";
+import { offlineReturn } from "@/src/offlineActions";
 import { spacing, useTheme } from "@/src/theme";
 import { Badge, Btn, Card, Empty, ErrorBox, Field, Header, IconBtn, Loading, Row, Segments, Select, Sheet, T, useToast } from "@/src/ui";
 
@@ -37,6 +40,8 @@ function InvoiceSheet({ doc, onClose }: { doc: any | null; onClose: () => void }
             )}
             {!!(doc.notes || doc.reason) && <T v="caption">{doc.notes || doc.reason}</T>}
           </Card>
+          {doc.pending && <Badge text="بانتظار المزامنة" tone="warning" />}
+          <InvoiceActions doc={doc} />
         </>
       )}
     </Sheet>
@@ -45,6 +50,7 @@ function InvoiceSheet({ doc, onClose }: { doc: any | null; onClose: () => void }
 
 function ReturnSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const toast = useToast();
+  const { user } = useAuth();
   const customers = useApi<any[]>("/customers", visible);
   const products = useApi<any[]>("/products", visible);
   const [cust, setCust] = useState<any>(null);
@@ -52,16 +58,21 @@ function ReturnSheet({ visible, onClose }: { visible: boolean; onClose: () => vo
   const [qty, setQty] = useState("");
   const [price, setPrice] = useState("");
   const [reason, setReason] = useState("");
-  const m = useMutate("POST", "/sales-returns", "تم تسجيل المرتجع", () => {
-    setCust(null); setProd(null); setQty(""); setReason("");
-    onClose();
-  });
-  const submit = () => {
+  const [saving, setSaving] = useState(false);
+  const submit = async () => {
     if (!cust || !prod || !(+qty > 0)) return toast("أكمل بيانات المرتجع", "error");
-    m.mutate({ customer_id: cust.id, items: [{ product_id: prod.id, quantity: +qty, price: +price || 0 }], reason });
+    setSaving(true);
+    try {
+      await offlineReturn({ customer: cust, line: { product_id: prod.id, product_name: prod.name, quantity: +qty, price: +price || 0 }, reason, userName: user?.name });
+      toast("تم تسجيل المرتجع");
+      setCust(null); setProd(null); setQty(""); setReason("");
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
   return (
-    <Sheet testID="return-form-sheet" visible={visible} onClose={onClose} title="مرتجع مبيعات" footer={<Btn testID="save-return-button" title="حفظ المرتجع" icon="return-down-back-outline" onPress={submit} loading={m.isPending} />}>
+    <Sheet testID="return-form-sheet" visible={visible} onClose={onClose} title="مرتجع مبيعات" footer={<Btn testID="save-return-button" title="حفظ المرتجع" icon="return-down-back-outline" onPress={submit} loading={saving} />}>
       <Select testID="return-customer-select" label="العميل" placeholder="اختر العميل" value={cust?.name ?? null} options={customers.data ?? []} getLabel={(c: any) => c.name} onSelect={setCust} />
       <Select testID="return-product-select" label="المنتج" placeholder="اختر المنتج" value={prod?.name ?? null} options={products.data ?? []} getLabel={(p: any) => p.name} onSelect={(p: any) => { setProd(p); setPrice(String(p.sale_price)); }} />
       <View style={{ flexDirection: "row", gap: spacing.md }}>
@@ -98,6 +109,7 @@ export default function Sales({ tabs = ["sales", "returns"], title = "الفوا
           </>
         }
       />
+      <SyncBanner />
       {tabs.length > 1 && <Segments value={tab} onChange={setTab} options={tabs.map((k) => ({ key: k, label: labels[k] }))} />}
       {q.isLoading ? (
         <Loading />
@@ -123,6 +135,7 @@ export default function Sales({ tabs = ["sales", "returns"], title = "الفوا
                 right={
                   <View style={{ alignItems: "flex-end", gap: 2 }}>
                     <T v="label">{money(item.total)}</T>
+                    {item.pending && <Badge text="غير متزامن" tone="warning" />}
                     {tab === "sales" && item.remaining > 0 && <Badge text={`آجل ${money(item.remaining)}`} tone="warning" />}
                   </View>
                 }

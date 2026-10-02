@@ -1,23 +1,33 @@
 import { useEffect, useState } from "react";
 
 import { money } from "@/src/api";
-import { useMutate } from "@/src/hooks";
+import { useAuth } from "@/src/auth";
+import { offlineCollection } from "@/src/offlineActions";
 import { Btn, Card, Field, Sheet, T, useToast } from "@/src/ui";
 
 export function CollectSheet({ customer, onClose }: { customer: any | null; onClose: () => void }) {
   const toast = useToast();
+  const { user } = useAuth();
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
   useEffect(() => {
     if (customer) {
       setAmount(String(customer.balance));
       setNotes("");
     }
   }, [customer]);
-  const m = useMutate("POST", "/collections", "تم تسجيل التحصيل", onClose);
-  const submit = () => {
+  const submit = async () => {
     if (!(+amount > 0)) return toast("أدخل مبلغاً صحيحاً", "error");
-    m.mutate({ customer_id: customer.id, amount: +amount, notes });
+    if (+amount > customer.balance + 0.001) return toast("المبلغ أكبر من دين العميل", "error");
+    setSaving(true);
+    try {
+      await offlineCollection({ customer, amount: +amount, notes, userName: user?.name });
+      toast("تم تسجيل التحصيل");
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
   return (
     <Sheet
@@ -25,7 +35,7 @@ export function CollectSheet({ customer, onClose }: { customer: any | null; onCl
       visible={!!customer}
       onClose={onClose}
       title="تحصيل دفعة"
-      footer={<Btn testID="confirm-collection-button" title="تأكيد التحصيل" icon="cash-outline" onPress={submit} loading={m.isPending} />}
+      footer={<Btn testID="confirm-collection-button" title="تأكيد التحصيل" icon="cash-outline" onPress={submit} loading={saving} />}
     >
       {customer && (
         <>

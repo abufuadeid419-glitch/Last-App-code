@@ -9,14 +9,22 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.mobilerebuild.iau31a"
+      "bundleIdentifier": "com.emergent.mobilerebuild.iau31a",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Record where each sale and visit happens",
+        "NSPhotoLibraryUsageDescription": "Choose your company logo for invoices"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.emergent.mobilerebuild.iau31a"
+      "package": "com.emergent.mobilerebuild.iau31a",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -39,7 +47,20 @@
       "expo-secure-store",
       "expo-web-browser",
       "expo-status-bar",
-      "@react-native-vector-icons/ionicons"
+      "@react-native-vector-icons/ionicons",
+      "expo-sharing",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Record where each sale and visit happens"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose your company logo for invoices"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

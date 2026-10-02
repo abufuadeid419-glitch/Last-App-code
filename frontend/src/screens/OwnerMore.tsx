@@ -1,12 +1,15 @@
 import { useState } from "react";
-import { RefreshControl, ScrollView, View } from "react-native";
+import { RefreshControl, View } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 
 import { fmtDate } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { AccountButton } from "@/src/components/AccountButton";
+import { AgentsMap } from "@/src/components/AgentsMap";
+import { OrgProfile } from "@/src/components/OrgProfile";
 import { useApi, useBottomChrome, useMutate } from "@/src/hooks";
 import { spacing, useTheme } from "@/src/theme";
-import { Badge, Btn, Card, Empty, Field, Header, IconBtn, Row, Section, Segments, Select, Sheet, T, useToast } from "@/src/ui";
+import { Badge, Btn, Card, Empty, Field, Header, IconBtn, Loading, Row, Section, Segments, Select, Sheet, T, useToast } from "@/src/ui";
 
 function InviteSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const toast = useToast();
@@ -66,7 +69,8 @@ export default function OwnerMore() {
   const { colors } = useTheme();
   const { user } = useAuth();
   const bottom = useBottomChrome();
-  const [tab, setTab] = useState<"team" | "deliveries">("team");
+  const [tab, setTab] = useState<"team" | "deliveries" | "tracking" | "profile">("team");
+  const tracking = useApi<any[]>("/tracking/agents", tab === "tracking");
   const emps = useApi<any>("/employees");
   const deliveries = useApi<any[]>("/deliveries");
   const [invite, setInvite] = useState(false);
@@ -78,12 +82,18 @@ export default function OwnerMore() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }} testID="owner-more-screen">
       <Header title="الإدارة" subtitle={`${user?.org?.name ?? ""} · حتى ${user?.org?.max_employees ?? 0} موظفين`} right={<AccountButton />} />
-      <Segments value={tab} onChange={setTab} options={[{ key: "team", label: "الموظفون" }, { key: "deliveries", label: "تسليم البضاعة" }]} />
-      <ScrollView
+      <Segments value={tab} onChange={setTab} options={[{ key: "team", label: "الموظفون" }, { key: "deliveries", label: "تسليم البضاعة" }, { key: "tracking", label: "تتبع GPS" }, { key: "profile", label: "ملف المؤسسة" }]} />
+      <KeyboardAwareScrollView
+        bottomOffset={24}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: spacing.lg, gap: spacing.xl, paddingBottom: bottom + spacing.xl }}
-        refreshControl={<RefreshControl refreshing={emps.isRefetching || deliveries.isRefetching} onRefresh={() => { emps.refetch(); deliveries.refetch(); }} tintColor={colors.brandPrimary} />}
+        refreshControl={<RefreshControl refreshing={emps.isRefetching || deliveries.isRefetching} onRefresh={() => { emps.refetch(); deliveries.refetch(); tracking.refetch(); }} tintColor={colors.brandPrimary} />}
       >
-        {tab === "team" ? (
+        {tab === "profile" ? (
+          <OrgProfile />
+        ) : tab === "tracking" ? (
+          tracking.isLoading ? <Loading /> : <AgentsMap agents={tracking.data ?? []} />
+        ) : tab === "team" ? (
           <>
             <Btn testID="open-invite-button" title="إضافة موظف جديد" icon="person-add-outline" onPress={() => setInvite(true)} />
             <Section title="الموظفون">
@@ -116,7 +126,7 @@ export default function OwnerMore() {
             </Section>
           </>
         )}
-      </ScrollView>
+      </KeyboardAwareScrollView>
       <InviteSheet visible={invite} onClose={() => setInvite(false)} />
       <DeliverySheet visible={deliver} onClose={() => setDeliver(false)} agents={agents} />
     </View>

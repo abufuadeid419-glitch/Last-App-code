@@ -7,6 +7,7 @@ export default function DevLayout() {
         { name: "index", title: "الرئيسية", icon: "speedometer-outline", sf: "gauge" },
         { name: "licenses", title: "التراخيص", icon: "key-outline", sf: "key.fill" },
         { name: "orgs", title: "المؤسسات", icon: "business-outline", sf: "building.2.fill" },
+        { name: "billing", title: "الاشتراكات", icon: "card-outline", sf: "creditcard.fill" },
       ]}
     />
   );

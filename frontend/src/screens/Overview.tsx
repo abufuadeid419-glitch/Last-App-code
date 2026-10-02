@@ -1,14 +1,18 @@
+import { useRouter } from "expo-router";
 import { RefreshControl, ScrollView, View } from "react-native";
 
 import { money } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { AccountButton } from "@/src/components/AccountButton";
+import { LocationCard } from "@/src/components/LocationCard";
+import { SyncBanner } from "@/src/components/SyncBanner";
 import { useApi, useBottomChrome } from "@/src/hooks";
 import { spacing, useTheme } from "@/src/theme";
-import { Badge, Card, Empty, ErrorBox, Header, Loading, Row, Section, Stat, T } from "@/src/ui";
+import { Badge, Btn, Card, Empty, ErrorBox, Header, Loading, Row, Section, Stat, T } from "@/src/ui";
 
 export default function Overview() {
   const { user } = useAuth();
+  const router = useRouter();
   const { colors } = useTheme();
   const bottom = useBottomChrome();
   const isAgent = user?.employee_type === "FIELD_AGENT";
@@ -21,6 +25,7 @@ export default function Overview() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }} testID="overview-screen">
       <Header title={`مرحباً، ${user?.name?.split(" ")[0] ?? ""}`} subtitle={user?.org?.name} right={<AccountButton />} />
+      <SyncBanner />
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, gap: spacing.xl, paddingBottom: bottom + spacing.xl }}
         refreshControl={<RefreshControl refreshing={stats.isRefetching} onRefresh={() => { stats.refetch(); inv.refetch(); agents.refetch(); }} tintColor={colors.brandPrimary} />}
@@ -31,6 +36,10 @@ export default function Overview() {
           <ErrorBox message={(stats.error as Error).message} onRetry={stats.refetch} />
         ) : (
           <>
+            {isAgent && <LocationCard />}
+            {!isAgent && (
+              <Btn testID="open-reports-button" variant="secondary" icon="bar-chart-outline" title="التقارير اليومية والأسبوعية والشهرية" onPress={() => router.push("/reports")} />
+            )}
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.md }}>
               <Stat testID="stat-today-sales" label="مبيعات اليوم" value={money(s.today_sales)} icon="today-outline" />
               <Stat testID="stat-total-sales" label={isAgent ? "إجمالي مبيعاتي" : "إجمالي المبيعات"} value={money(s.sales_total)} icon="trending-up-outline" tone="success" />

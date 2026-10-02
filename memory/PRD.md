@@ -17,6 +17,15 @@ User choices: FastAPI + MongoDB backend, all roles (Developer, Owner, Accountant
 - Accountant: overview, invoices/collections/returns, debts with collect, customers, customer statement
 - Blocked screen for suspended or expired orgs
 
+## Iteration 2 (2026-06)
+- PDF invoices via expo-print, built from HTML that includes the logo and org contact/tax info. Distributors can share (native), print, or send a WhatsApp text to the customer's phone
+- Org profile and logo upload (Emergent Object Storage), managed from Owner > الإدارة > ملف المؤسسة
+- Offline-first agent transactions: src/offline.ts keeps a GET cache plus a persistent queue; src/offlineActions.ts applies changes locally first. The server de-duplicates by client id. A SyncBanner shows pending and failed items
+- Reports screen (/reports): day/week/month bar chart and table for owner and accountant
+- Upgrade plans: the developer creates plans, sets payment settings, and approves or rejects requests (Developer > الاشتراكات). The owner uses /upgrade (also reachable from the blocked screen)
+- GPS: foreground location tracking for agents, with location attached to every transaction. Owner sees agent locations under الإدارة > تتبع GPS (map on native, list on web)
+
 ## Backlog
+- Background location tracking (requires a native build)
 - P1: PDF/print and share for invoices; offline sales queue; purchase returns; reports by date range
 - P2: route planning and map tracking; notifications center; currencies and price lists; backups; AI assistant
