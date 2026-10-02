@@ -1,0 +1,41 @@
+{
+  "summary": "First full test iteration of Smart System (Arabic RTL sales/distribution Expo app + FastAPI/Mongo). Backend: 34/34 pytest cases pass (100%), covering auth/me, activation (LIC + EMP codes), trial, developer stats/licenses CRUD/org patch (suspend+restore), products CRUD + role gating, purchases/stock increase, customers CRUD + statement, employee invite/list/delete (EMP code), deliveries (warehouse->distributor + stock validation), my/inventory, sales (agent-only, deducts inventory, updates customer balance, CASH/CREDIT), collections (balance cap enforced), sales-returns, stats/overview (owner-only gross_profit, agent-scoped), stats/agents, and permission denials (403) across roles. Frontend web preview (390x844): login screen renders, token injection via localStorage works for all 5 roles. Owner sees 4 tabs (الرئيسية/المخزون/العملاء/الإدارة); product add, invite employee (EMP code shown), owner more screen all work. Agent sees 4 tabs (الرئيسية/بيع/العملاء/السجل); new-sale screen with customer select/line select/paid/notes/total/submit works, sales history shows INV- entries, customers list exposes collect-customer buttons. Accountant home shows overview incl. المشتريات and tنبيهات نقص المخزون. Developer dashboard shows 3 tabs (الرئيسية/التراخيص/المؤسسات) with stats. New-user activation screen shows both code input and trial form. Minor UX issue: sheet footer buttons (save-product-button, create-invite-button) can be below the fold on 390x844 and require scroll-into-view.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/dev/orgs PATCH", "issue": "extend_days always flips plan to LICENSE even when org is already LICENSE – harmless but silently overrides TRIAL->LICENSE conversion without explicit action; acceptable per design but worth a note."},
+      {"endpoint": "/api/activate", "issue": "On successful EMP- activation, response does not refresh org object for employee (user has no org expiration check at activation time – not a bug but worth confirming suspended org blocks EMP activation too). Not blocking."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Products.product-form-sheet", "issue": "save-product-button is outside viewport at 390x844; user must scroll inside the sheet to reach it. Requires scroll_into_view in automated tests.", "testID": "save-product-button", "priority": "MEDIUM"},
+      {"component": "OwnerMore.invite-sheet", "issue": "create-invite-button footer is below fold on 390x844; needs scroll to reach.", "testID": "create-invite-button", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Products / Invite sheet", "issues": ["Bottom-sheet footer buttons occasionally pushed below viewport on 390x844; consider sticky footer or shorter form."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_smart_system.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Optional UX) Make bottom-sheet footer buttons sticky so save-product-button and create-invite-button remain visible on 390x844 without scrolling.",
+    "Consider validating that suspended org also blocks EMP- activation (currently /activate does not consult org.status)."
+  ],
+  "critical_code_review_comments": [
+    "server.py single file 681 lines – within acceptable limit but close to 700; splitting into routers (auth/dev/catalog/sales/stats) would improve maintainability.",
+    "Good: _id stripped via NO_ID projection on every find; env vars used for Mongo/DB; FastAPI validates with Pydantic; counters used for sequential invoice/receipt/return numbers.",
+    "DEVELOPER_EMAILS=\"\" in .env combined with 'first user becomes DEVELOPER' bootstrap logic is a secure default but worth documenting.",
+    "frontend/.env uses EXPO_PUBLIC_BACKEND_URL (not EXPO_BACKEND_URL); api.ts correctly reads it – acceptable Expo convention."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_smart_system.py (new)",
+    "/app/test_reports/iteration_1.json (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100% (all critical flows verified)"},
+  "seed_data_creation": "Ran /app/backend/seed_test.py once at start. Tests created TEST_LIC_ORG license, TEST_TRIAL_ORG trial org, TEST_منتج/TEST_UI_P1 products, TEST_عميل customer, EMP invitations, 1 sale/collection/return, and left them in DB. Re-run seed_test.py to restore test_token_new to unactivated state before next run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest runs sequentially (-n 0) because tests share STATE across classes via module dict. Pytest.ini forces -n 2 --dist loadscope so always invoke with explicit `-n 0`. Token injection pattern for Expo web: localStorage.setItem('session_token', JSON.stringify('<token>')) + full page reload. Known-good tokens: test_token_dev/owner/agent/acct/new. Backend URL from frontend/.env is EXPO_PUBLIC_BACKEND_URL (https://mobile-rebuild-22.preview.emergentagent.com). Re-run /app/backend/seed_test.py to reset test_token_new to role=null before activation/trial flow tests."
+}

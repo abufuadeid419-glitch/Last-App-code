@@ -1,0 +1,158 @@
+{
+  "app_name": "Smart System (نظام الإدارة)",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A structured, highly readable, and trustworthy mobile ERP where data clarity and rapid RTL text entry reign supreme.",
+  "color": {
+    "surface": "#FFFFFF",
+    "onSurface": "#191C1B",
+    "surfaceSecondary": "#F4F7F5",
+    "onSurfaceSecondary": "#4A524F",
+    "surfaceTertiary": "#E9EBEA",
+    "onSurfaceTertiary": "#3F4945",
+    "surfaceInverse": "#191C1B",
+    "onSurfaceInverse": "#FFFFFF",
+    "brand": "#264E3F",
+    "brandPrimary": "#264E3F",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#DCE9E2",
+    "onBrandSecondary": "#153227",
+    "brandTertiary": "#EFF5F1",
+    "onBrandTertiary": "#264E3F",
+    "success": "#2D684B",
+    "onSuccess": "#FFFFFF",
+    "warning": "#B07D10",
+    "onWarning": "#FFFFFF",
+    "error": "#9C3737",
+    "onError": "#FFFFFF",
+    "info": "#3A5C61",
+    "onInfo": "#FFFFFF",
+    "border": "#E3E7E5",
+    "borderStrong": "#BFC9C4",
+    "divider": "#E8ECE9",
+    "muted": "#707975",
+    "onBrand": "#FFFFFF"
+  },
+  "typography": {
+    "displayFontFamily": "Cairo",
+    "textFontFamily": "Cairo",
+    "scale": {
+      "sm": 13,
+      "base": 15,
+      "lg": 17,
+      "xl": 22,
+      "2xl": 26
+    }
+  },
+  "spacing": {
+    "rule": "Generous vertical rhythm. Always account for Safe Area at screen root. Cards should never be flush to the edge.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "1",
+  "navigation": "bottom_tabs",
+  "icon_set": "Ionicons",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Use glass on bottom tab bars, sticky headers over scrolling content, and floating action buttons.",
+      "Pair blur with a translucent tinted base (≥70% opacity of surface) underneath to guarantee readability."
+    ],
+    "dont's": [
+      "Never blur body text regions, form fields, or cards in dense data lists."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Login",
+      "purpose": "Secure entry via Google Sign-In or Activation Code.",
+      "states": {
+        "loading": "Spinner over brand color block",
+        "empty": "N/A",
+        "error": "Toast or inline alert indicating invalid license or failed login."
+      },
+      "layout": "Hero image at the top (abstract business shape or logistics warehouse), followed by a clean, single-column form taking up the lower half. Primary CTA sticky at bottom."
+    },
+    {
+      "name": "Owner Dashboard",
+      "purpose": "High-level overview of products, customers, inventory, and KPIs.",
+      "states": {
+        "loading": "Skeleton grids for KPIs.",
+        "empty": "Illustration of an empty warehouse with 'No data generated yet' + Add Employee/Product CTA.",
+        "error": "Readable message with a prominent 'Retry' button."
+      },
+      "layout": "Grid of KPI cards at the top using abstract subtle gradients. Below, horizontal scrollable lists for quick access to Distributors and Recent Transactions."
+    },
+    {
+      "name": "Invoice Creation (Distributor)",
+      "purpose": "Create a new sales invoice with dynamic line items in the field.",
+      "states": {
+        "loading": "Spinner during invoice finalization.",
+        "empty": "N/A",
+        "error": "Form validation errors highlighted in red (e.g., missing quantities)."
+      },
+      "layout": "Modular form. Section 1: Customer details. Section 2: Dynamic list of line items (description, quantity, price fields stacked vertically or in neat cards per item). An 'Add Item' button explicitly beneath the list. Section 3: Totals summary. The 'Submit Invoice' primary CTA must be sticky at the bottom."
+    },
+    {
+      "name": "Accountant Sales & Debts",
+      "purpose": "Track sales invoices, collections, and outstanding customer debts.",
+      "states": {
+        "loading": "List skeleton.",
+        "empty": "Illustration of a clean ledger, 'No outstanding debts'.",
+        "error": "Error alert with 'Reload Data' button."
+      },
+      "layout": "Tabbed view or segmented control for filtering [Invoices | Collections | Debts]. Detailed list rows with high contrast text for monetary values. Prominent search bar at the top."
+    }
+  ],
+  "images": {
+    "login_hero": {
+      "url": "https://images.unsplash.com/photo-1619350280773-188ac188d3e9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MDV8MHwxfHNlYXJjaHwzfHxhYnN0cmFjdCUyMGdlb21ldHJpYyUyMHBhcGVyJTIwbWluaW1hbHxlbnwwfHx8fDE3OTA5NzkwNzN8MA&ixlib=rb-4.1.0&q=85",
+      "dark": "https://images.unsplash.com/photo-1454117096348-e4abbeba002c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MDV8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGdlb21ldHJpYyUyMHBhcGVyJTIwbWluaW1hbHxlbnwwfHx8fDE3OTA5NzkwNzN8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Abstract geometric paper representing structure and organization"
+    },
+    "owner_dashboard_header": {
+      "url": "https://images.unsplash.com/photo-1587293852726-70cdb56c2866?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Nzh8MHwxfHNlYXJjaHwxfHx3YXJlaG91c2UlMjBkaXN0cmlidXRpb24lMjBsb2dpc3RpY3N8ZW58MHx8fHwxNzkwOTc5MDczfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Warehouse distribution logistics background"
+    },
+    "accountant_empty_state": {
+      "url": "https://images.unsplash.com/photo-1707157284454-553ef0a4ed0d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHwxfHxhY2NvdW50aW50aW5nJTIwY2FsY3VsYXRvciUyMGRlc2slMjBmbGF0bGF5fGVufDB8fHx8MTc5MDk3OTA3M3ww&ixlib=rb-4.1.0&q=85",
+      "alt": "Accounting flatlay with calculator for empty state"
+    }
+  },
+  "haptics": {
+    "primary_button_press": "impactLight",
+    "add_line_item": "selection",
+    "invoice_success": "notificationSuccess",
+    "tab_change": "selection"
+  },
+  "instructions_to_main_agent": [
+    "CRITICAL: Arabic RTL Compliance. Do not use 'marginLeft' or 'paddingRight'. Use logical properties strictly ('marginStart', 'paddingEnd'). Initialize React Native I18nManager to force RTL (I18nManager.forceRTL(true)) upon app launch.",
+    "CRITICAL: Arabic Typography. The font sizes have been scaled up by ~2px compared to default Latin scales. DO NOT apply any 'letterSpacing' (tracking) to text. Arabic is a cursive script; letter spacing disconnects the letters and breaks the text.",
+    "For numbers (like prices and phone numbers), stick to standard Western Arabic numerals (0-9) unless the locale requires Eastern Arabic numerals, but make sure they align correctly in RTL.",
+    "Invoice Creation Form: Break this into logical chunks per Mobbin patterns. Customer selection should be distinct from the dynamic line items array. Stack the line item inputs (Description, Qty, Price) inside a 'surfaceSecondary' card for easy touch targets in the field.",
+    "Ensure every screen with scrolling content and a core action (e.g. Save Invoice) has a sticky CTA at the bottom, placed inside a Safe Area avoiding container outside the ScrollView.",
+    "When rendering images as backgrounds (e.g. Owner Dashboard Header), you MUST apply the top-to-bottom gradient scrim using 'expo-linear-gradient' to ensure text contrast for Arabic text placed on it."
+  ]
+}
