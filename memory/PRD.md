@@ -61,6 +61,11 @@ User choices: FastAPI + MongoDB backend, all roles (Developer, Owner, Accountant
 - Customer statement: StatementActions adds a PDF (expo-print, share sheet on native, print on web), print, and a WhatsApp summary inside the statement sheet
 - Guided tour: GuidedTour runs a first-run walkthrough per role (storage key tour_done_<role>). Tab descriptions come from the role _layout files. It can be replayed from حسابي > الجولة التعريفية
 
+## Iteration 7 (2026-06)
+- 80mm thermal paper is the fixed format for every printed document. src/receipts.ts builds monochrome receipts with 72mm printable width: sales invoice, return note, collection receipt (سند قبض, new, opened by tapping a collection row) and the customer statement. printDoc.ts (native) sizes the expo-print page to 80mm × estimated height. printDoc.web.ts prints from a hidden iframe and measures the exact height (expo-print web only calls window.print on the app page). DocActions.tsx holds the shared PDF/print/WhatsApp buttons
+- Live tracking: useApi gained a refetchMs param. /tracking/agents refreshes every 60s in the tracking tab and the map sheet. The sheet follows the latest fix and shows a live dot, "آخر تحديث" time and a refresh button. Distributors now post their location every ~55s (location.ts)
+- Debt reminders: the debts tab has a WhatsApp button per debtor (remind-customer-<id>) that sends a prefilled balance reminder, then POST /api/customers/{cid}/reminded stores last_reminder_at (shown in the row subtitle)
+
 ## Backlog
 - Background location tracking (requires a native build)
 - P1: PDF/print and share for invoices; offline sales queue; purchase returns; reports by date range

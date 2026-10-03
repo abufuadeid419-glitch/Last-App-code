@@ -74,7 +74,7 @@ export default function OwnerMore() {
   const { user } = useAuth();
   const bottom = useBottomChrome();
   const [tab, setTab] = useState<"team" | "deliveries" | "routes" | "prices" | "tracking" | "profile">("team");
-  const tracking = useApi<any[]>("/tracking/agents", tab === "tracking");
+  const tracking = useApi<any[]>("/tracking/agents", tab === "tracking", 60000);
   const emps = useApi<any>("/employees");
   const deliveries = useApi<any[]>("/deliveries");
   const [invite, setInvite] = useState(false);

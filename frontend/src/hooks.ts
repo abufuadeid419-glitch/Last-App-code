@@ -9,11 +9,12 @@ import { useToast } from "@/src/ui";
 
 // GET with offline cache: last good response is persisted; when offline (or while
 // local changes are waiting to sync) the cached copy is served.
-export function useApi<T = any>(path: string, enabled = true) {
+export function useApi<T = any>(path: string, enabled = true, refetchMs?: number) {
   return useQuery<T>({
     queryKey: [path],
     enabled,
     networkMode: "always",
+    refetchInterval: refetchMs ?? false,
     queryFn: async () => {
       await syncQueue();
       if (pendingCount() > 0) {

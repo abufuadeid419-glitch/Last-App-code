@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { fmtDate, money } from "@/src/api";
 import { GoogleMapEmbed } from "@/src/components/GoogleMapEmbed";
+import { useApi } from "@/src/hooks";
 import { mapDirectionsUrl, mapOpenUrl, MapType } from "@/src/maps";
 import { radius, spacing, useTheme } from "@/src/theme";
 import { Badge, Btn, IconBtn, T } from "@/src/ui";
@@ -14,31 +15,51 @@ const TYPES: { key: MapType; label: string }[] = [
   { key: "k", label: "قمر صناعي" },
   { key: "h", label: "هجين" },
 ];
+const LIVE_MS = 60000;
 
-// Full-screen Google Map focused on one distributor's last GPS location and today's visits.
+const ago = (at: string) => {
+  const m = Math.round((Date.now() - new Date(at).getTime()) / 60000);
+  if (m < 1) return "الآن";
+  if (m < 60) return `منذ ${m} دقيقة`;
+  if (m < 1440) return `منذ ${Math.round(m / 60)} ساعة`;
+  return `منذ ${Math.round(m / 1440)} يوم`;
+};
+const clock = (ts: number) => new Date(ts).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+// Full-screen Google Map focused on one distributor; refreshes every minute and follows the latest GPS fix.
 export function AgentMapSheet({ agent, onClose }: { agent: any | null; onClose: () => void }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const q = useApi<any[]>("/tracking/agents", !!agent, LIVE_MS);
+  const live = q.data?.find((a) => a.user_id === agent?.user_id) ?? agent;
+  const loc = live?.last_location;
   const [type, setType] = useState<MapType>("m");
-  const [focus, setFocus] = useState<Focus | null>(null);
-  const loc = agent?.last_location;
+  const [visit, setVisit] = useState<Focus | null>(null); // null = follow the latest location
 
-  useEffect(() => {
-    if (loc) setFocus({ lat: loc.lat, lng: loc.lng, label: "آخر موقع" });
-  }, [agent?.user_id, loc]);
+  useEffect(() => setVisit(null), [agent?.user_id]);
 
-  const visits: any[] = agent?.today_visits ?? [];
-  const stops: Focus[] = loc ? [{ lat: loc.lat, lng: loc.lng, label: "آخر موقع" }, ...visits.map((v) => ({ lat: v.lat, lng: v.lng, label: `${v.invoice_no} · ${v.customer_name}` }))] : [];
+  const latest: Focus | null = loc ? { lat: loc.lat, lng: loc.lng, label: "آخر موقع" } : null;
+  const focus = visit ?? latest;
+  const visits: any[] = live?.today_visits ?? [];
+  const stops: Focus[] = latest ? [latest, ...visits.map((v) => ({ lat: v.lat, lng: v.lng, label: `${v.invoice_no} · ${v.customer_name}` }))] : [];
+  const fresh = loc && Date.now() - new Date(loc.at).getTime() < 5 * 60000;
 
   return (
     <Modal visible={!!agent} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <View testID="agent-map-sheet" style={{ flex: 1, backgroundColor: colors.surface, paddingTop: insets.top }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
           <View style={{ flex: 1 }}>
-            <T v="h2" numberOfLines={1}>{agent?.name ?? agent?.email}</T>
-            {loc && <T v="caption">آخر تحديث: {fmtDate(loc.at)}</T>}
+            <T v="h2" numberOfLines={1}>{live?.name ?? live?.email}</T>
+            {loc && <T v="caption" testID="agent-map-last-seen">آخر موقع: {fmtDate(loc.at)} · {ago(loc.at)}</T>}
           </View>
+          <IconBtn testID="agent-map-refresh" icon="refresh" onPress={() => q.refetch()} />
           <IconBtn testID="agent-map-close-button" icon="close" onPress={onClose} />
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.sm }}>
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: fresh ? colors.success : colors.muted }} />
+          <T v="caption" testID="agent-map-live-status">
+            {fresh ? "مباشر" : "غير متصل حالياً"} · تحديث تلقائي كل دقيقة{q.dataUpdatedAt ? ` · آخر تحديث ${clock(q.dataUpdatedAt)}` : ""}
+          </T>
         </View>
 
         <View style={{ flex: 1, backgroundColor: colors.surfaceSecondary, overflow: "hidden" }}>
@@ -67,15 +88,15 @@ export function AgentMapSheet({ agent, onClose }: { agent: any | null; onClose: 
           {stops.length > 1 && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
               {stops.map((s, i) => {
-                const active = focus?.lat === s.lat && focus?.lng === s.lng;
+                const active = i === 0 ? !visit : visit?.lat === s.lat && visit?.lng === s.lng;
                 return (
                   <Pressable
                     key={i}
                     testID={`agent-map-stop-${i}`}
-                    onPress={() => setFocus(s)}
+                    onPress={() => setVisit(i === 0 ? null : s)}
                     style={{ minHeight: 40, paddingHorizontal: spacing.md, borderRadius: radius.pill, justifyContent: "center", backgroundColor: active ? colors.brandTertiary : colors.surfaceSecondary, borderWidth: 1, borderColor: active ? colors.brandPrimary : colors.border }}
                   >
-                    <T v="caption" color={active ? "brandPrimary" : "onSurface"}>{i === 0 ? s.label : `${s.label} · ${money(visits[i - 1].total)}`}</T>
+                    <T v="caption" color={active ? "brandPrimary" : "onSurface"}>{i === 0 ? "آخر موقع (متابعة مباشرة)" : `${s.label} · ${money(visits[i - 1].total)}`}</T>
                   </Pressable>
                 );
               })}

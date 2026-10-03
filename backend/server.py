@@ -428,6 +428,16 @@ async def customer_statement(cid: str, user=Depends(ANY_ORG)):
     return {"customer": cust, "rows": rows}
 
 
+@api.post("/customers/{cid}/reminded")
+async def mark_customer_reminded(cid: str, user=Depends(ANY_ORG)):
+    """Records that a WhatsApp debt reminder was sent to the customer."""
+    r = await db.customers.update_one({"id": cid, "org_id": user["org_id"]},
+                                      {"$set": {"last_reminder_at": iso(), "last_reminder_by": user.get("name")}})
+    if not r.matched_count:
+        raise HTTPException(404, "غير موجود")
+    return {"ok": True}
+
+
 # ---------------- Employees ----------------
 @api.get("/employees")
 async def list_employees(user=Depends(STAFF)):

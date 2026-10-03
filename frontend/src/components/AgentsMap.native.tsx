@@ -28,7 +28,7 @@ export function AgentsMap({ agents }: { agents: any[] }) {
           )}
         </MapView>
       </View>
-      <T v="caption">اضغط على أي موزع لعرض موقعه على خرائط Google</T>
+      <T v="caption">اضغط على أي موزع لعرض موقعه على خرائط Google · تحديث تلقائي كل دقيقة</T>
       {located.map((a) => (
         <AgentLocationRow key={a.user_id} a={a} />
       ))}

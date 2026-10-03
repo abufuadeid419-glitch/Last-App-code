@@ -6,6 +6,7 @@ import { useAuth } from "@/src/auth";
 import { AccountButton } from "@/src/components/AccountButton";
 import { DateField } from "@/src/components/DateField";
 import { InvoiceActions } from "@/src/components/InvoiceActions";
+import { ReceiptSheet } from "@/src/components/ReceiptSheet";
 import { SyncBanner } from "@/src/components/SyncBanner";
 import { useApi, useBottomChrome, useMutate } from "@/src/hooks";
 import { offlineReturn } from "@/src/offlineActions";
@@ -127,6 +128,7 @@ export default function Sales({ tabs = ["sales", "returns"], title = "الفوا
   const bottom = useBottomChrome();
   const [tab, setTab] = useState<Tab>(tabs[0]);
   const [doc, setDoc] = useState<any>(null);
+  const [receipt, setReceipt] = useState<any>(null);
   const [ret, setRet] = useState(false);
   const isAgent = user?.employee_type === "FIELD_AGENT";
   const paths: Record<Tab, string> = { sales: "/sales", returns: "/sales-returns", collections: "/collections", purchases: "/purchases", purchase_returns: "/purchase-returns" };
@@ -200,7 +202,7 @@ export default function Sales({ tabs = ["sales", "returns"], title = "الفوا
             tab === "purchases" || tab === "purchase_returns" ? (
               <Row testID={`${tab}-row-${item.id}`} icon={tab === "purchases" ? "download-outline" : "arrow-undo-outline"} title={`${item.product_name} × ${money(item.quantity)}`} subtitle={`${item.supplier || "بدون مورد"} · ${fmtDate(item.created_at)}${item.reason ? " · " + item.reason : ""}`} right={<T v="label">{money(item.total)}</T>} />
             ) : tab === "collections" ? (
-              <Row testID={`collection-row-${item.id}`} icon="cash-outline" title={`${item.receipt_no} · ${item.customer_name}`} subtitle={`${item.collector_name ?? ""} · ${fmtDate(item.created_at)}`} right={<T v="label" color="success">{money(item.amount)}</T>} />
+              <Row testID={`collection-row-${item.id}`} icon="cash-outline" title={`${item.receipt_no} · ${item.customer_name}`} subtitle={`${item.collector_name ?? ""} · ${fmtDate(item.created_at)}`} onPress={() => (item.pending ? null : setReceipt(item))} right={<T v="label" color="success">{money(item.amount)}</T>} />
             ) : (
               <Row
                 testID={`${tab}-row-${item.id}`}
@@ -222,6 +224,7 @@ export default function Sales({ tabs = ["sales", "returns"], title = "الفوا
         />
       )}
       <InvoiceSheet doc={doc} onClose={() => setDoc(null)} />
+      <ReceiptSheet col={receipt} onClose={() => setReceipt(null)} />
       {isAgent && <ReturnSheet visible={ret} onClose={() => setRet(false)} />}
     </View>
   );

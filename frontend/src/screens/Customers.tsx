@@ -1,13 +1,15 @@
 import { useMemo, useState } from "react";
 import { FlatList, Platform, RefreshControl, TextInput, View } from "react-native";
 
-import { fmtDate, money } from "@/src/api";
+import { api, fmtDate, money } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { AccountButton } from "@/src/components/AccountButton";
 import { CollectSheet } from "@/src/components/CollectSheet";
+import { openWhatsApp } from "@/src/components/DocActions";
 import { StatementActions } from "@/src/components/StatementActions";
 import { SyncBanner } from "@/src/components/SyncBanner";
 import { useApi, useBottomChrome, useMutate } from "@/src/hooks";
+import { queryClient } from "@/src/query-client";
 import { currentCoords } from "@/src/location";
 import { offlineCustomer } from "@/src/offlineActions";
 import { useTypeName } from "@/src/pricing";
@@ -75,6 +77,28 @@ export default function Customers({ debtsOnly = false }: { debtsOnly?: boolean }
     [list.data, q, debtsOnly],
   );
   const totalDebt = data.reduce((s, c) => s + (c.balance > 0 ? c.balance : 0), 0);
+  const org = useApi<any>("/org/profile", debtsOnly);
+
+  // One-tap WhatsApp debt reminder; records the reminder time on the customer.
+  const remind = (c: any) => {
+    if (!c.phone) return toast("لا يوجد رقم هاتف لهذا العميل", "error");
+    const o = org.data;
+    const text = [
+      `السلام عليكم ${c.name}،`,
+      "",
+      `نود تذكيركم بأن رصيدكم المستحق لدى ${o?.name ?? ""} هو:`,
+      `*${money(c.balance)} ${o?.currency ?? ""}*`,
+      "",
+      "نرجو التكرم بتسديد المبلغ في أقرب وقت ممكن.",
+      ...(o?.phone ? [`للاستفسار: ${o.phone}`] : []),
+      "",
+      "شكراً لتعاملكم معنا.",
+    ].join("\n");
+    openWhatsApp(c.phone, text)
+      .then(() => api(`/customers/${c.id}/reminded`, { method: "POST" }))
+      .then(() => queryClient.invalidateQueries({ queryKey: ["/customers"] }))
+      .catch(() => toast("تعذر فتح واتساب", "error"));
+  };
 
   const submit = () => {
     if (!form.name.trim()) return toast("اسم العميل مطلوب", "error");
@@ -110,6 +134,7 @@ export default function Customers({ debtsOnly = false }: { debtsOnly?: boolean }
           placeholderTextColor={colors.muted}
           style={{ minHeight: 44, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, paddingHorizontal: spacing.md, fontFamily: fonts.regular, color: colors.onSurface, textAlign: Platform.OS === "web" ? "right" : undefined }}
         />
+        {debtsOnly && <T v="caption" style={{ marginTop: spacing.xs }}>اضغط أيقونة واتساب لإرسال تذكير بالرصيد المستحق للعميل</T>}
       </View>
       {list.isLoading ? (
         <Loading />
@@ -127,11 +152,12 @@ export default function Customers({ debtsOnly = false }: { debtsOnly?: boolean }
               testID={`customer-row-${item.id}`}
               icon="person-outline"
               title={item.name}
-              subtitle={[typeName(item.type_id), item.phone, item.address].filter(Boolean).join(" · ") || "—"}
+              subtitle={[typeName(item.type_id), item.phone, item.address, debtsOnly && item.last_reminder_at ? `آخر تذكير: ${fmtDate(item.last_reminder_at)}` : ""].filter(Boolean).join(" · ") || "—"}
               onPress={() => (item.pending ? toast("العميل بانتظار المزامنة", "error") : setStatement(item.id))}
               right={
                 <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
                   <Badge text={money(item.balance)} tone={item.balance > 0 ? "warning" : "success"} />
+                  {debtsOnly && item.balance > 0 && <IconBtn testID={`remind-customer-${item.id}`} icon="logo-whatsapp" tone="brand" onPress={() => remind(item)} />}
                   {item.balance > 0 && <IconBtn testID={`collect-customer-${item.id}`} icon="cash-outline" onPress={() => setCollect(item)} />}
                   {canEdit && !debtsOnly && <IconBtn testID={`edit-customer-${item.id}`} icon="create-outline" onPress={() => setForm(item)} />}
                 </View>

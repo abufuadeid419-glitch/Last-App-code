@@ -10,7 +10,7 @@ export const getLastCoords = () => last;
 
 function onPos(pos: Location.LocationObject) {
   last = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-  if (Date.now() - lastPost > 120000) {
+  if (Date.now() - lastPost > 55000) {
     lastPost = Date.now();
     api("/locations", { method: "POST", body: { ...last, accuracy: pos.coords.accuracy } }).catch(() => {});
   }
