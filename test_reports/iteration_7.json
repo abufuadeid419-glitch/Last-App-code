@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 7 testing — BACKEND 198/198 passing after fixing one regression + updating 5 legacy test files to new rules; FRONTEND 29/29 critical testIDs verified across distributor, owner, accountant. RCA/FIX: found a 500-error regression in POST /api/routes/{rid}/optimize — _build_stops was called with 3 args while its signature requires 4 after the distributor-isolation refactor. Patched server.py:1438 to pass r['distributor_id']. Updated test_iteration2.py (IDEM customer+idem_fixed_cid now created as agent with all mandatory fields; delivery is now confirmed so sales have inventory), test_iteration3.py (TestC_CustomersTyped now creates typed/untyped customers as agent with mandatory GPS+address+phone>=7 digits; test_sale_sets_customer_lat_lng_when_missing adjusted — location is now sticky because lat/lng are mandatory at creation), test_iteration4.py (TEST_IT4_C created as agent), test_iteration5.py (TEST_IT5_C created as agent), test_iteration6.py (TEST_IT6_REMIND_C created as agent). Added NEW tests/test_iteration7.py with 42 tests over 7 classes: A customers rule changes (owner/acct 403, missing fields 400 listing all 4 labels incl GPS, phone<7 digits 400, invalid type 400, agent creates 200 w/ distributor_id, agent2 isolation verified against list/statement/reminded, owner sees all with distributor_name, PUT by other agent 404 / by owner 403 / by owning agent 200, DELETE 405), B routes filter foreign customer_ids silently, C payment vouchers (owner 403, over-credit 400, agent valid 200 w/ PAY- prefix and balance increases, cannot pay when non-credit, idempotent by id, list scoping agent-own vs owner-all vs agent2-none, statement includes PAYMENT row debit>0), D warehouse returns full lifecycle (agent creates PENDING WRT- deducting inventory, insufficient 400, agent/acct accept 403, owner accept 200 ACCEPTED and stock+=qty, second accept 404, reject restores agent inventory with reject_reason, second reject 404), E phone_country_code strips non-digits and caps at 4 ('00964 ' → '0096'), F trail (owner/acct 200 w/ date+points+visits, agent 403, bad date 400, unknown uid 404), G stale debtors (debtor appears, digest returns count>=1, debt_digest notification created for accountant via resp.items, after /reminded drops from /debts/stale, agent 403 on list). Full suite: cd /app/backend && python -m pytest tests -n 0 → 198 passed in 20.84s (iter2 39 + iter3 44 + iter4 47 + iter5 17 + iter6 9 + iter7 42). FRONTEND (390x844 web preview, three roles tested): (1) distributor: tab-ops opens distributor-ops-screen with all 4 segment-* chips and all 3 ops-*-today summary cells; ops-new-payments-button opens new-payment-sheet with payment-customer-select / payment-amount-input / payment-notes-input / save-payment-button; ops-new-wreturns-button opens wreturn-form-sheet with wreturn-product-select / save-wreturn-button; tab-customers shows add-customer-button; empty save surfaces customer-type-error AND customer-location-error (strict validation); bt-print-button is ABSENT on web (as required). (2) owner: tab-customers shows customers-readonly-note and has NO add-customer-button; tab-more > segment-deliveries renders; tab-more > segment-profile shows the 'رمز الدولة لأرقام واتساب (مثال: 964)' label. (3) accountant: tab-customers has NO add-customer-button; tab-debts shows segment-stale ('لم يُذكَّروا منذ 7 أيام'). Deprecated/warning packages: only observed useNativeDriver RN warning (not iteration-related).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/routes/{rid}/optimize", "issue": "FIXED by this agent: _build_stops signature changed to require distributor_id but optimize_route still passed 3 args, causing 500 Internal Server Error. Patched server.py:1438."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "useNativeDriver (warning)", "issue": "Carried from previous iterations: 'Animated: useNativeDriver is not supported...' appears on web; cosmetic only (web animated module missing). Not caused by this iteration."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration7.py",
+    "/app/test_reports/pytest/iteration7.xml"
+  ],
+  "action_items": [
+    "(Already fixed by T1) server.py:1438 — optimize_route now correctly forwards r['distributor_id'] to _build_stops. Please keep this guard; add a lint/mypy-friendly signature if desired.",
+    "(Nice-to-have) /api/customers/{id}/reminded currently stores last_reminder_by=null when the caller user has no 'name'; cosmetic only.",
+    "(Carryover from iter6) DocActions receipt-whatsapp-button still opens wa.me/?text=… when phone is missing — align with Customers.tsx guard (toast + no-op)."
+  ],
+  "critical_code_review_comments": [
+    "server.py: validate_customer / org_customer / is_agent correctly enforce new rules; distributor isolation uses composite {id, org_id, distributor_id} for agents and {id, org_id} for staff — tenant-safe.",
+    "server.py: create_customer forces distributor_id=user.user_id ignoring any client payload — good.",
+    "server.py: _route_access + _build_stops now consistently filter foreign customers (verified by TestB_Routes).",
+    "server.py: payment-vouchers correctly rejects when balance >= 0 (credit = -balance <= 0; amount > credit+0.001 → 400) and increments balance by amount, so balance can approach 0 without going positive from this endpoint.",
+    "server.py: warehouse-returns reject upserts distributor_inventory with org_id+product_name — safe when the row was previously deleted.",
+    "DocActions.tsx: btAvailable gate (btAvailable && <BluetoothPrint />) is the single hiding mechanism; on web it's false so bt-print-button is correctly absent (verified)."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (fix _build_stops arg at optimize_route)",
+    "/app/backend/tests/test_iteration2.py (idem customer now agent-created with all required fields; delivery confirmed)",
+    "/app/backend/tests/test_iteration3.py (TestC customers now agent-created; sale_sets_lat test rewritten for sticky location)",
+    "/app/backend/tests/test_iteration4.py (TEST_IT4_C now agent-created)",
+    "/app/backend/tests/test_iteration5.py (TEST_IT5_C now agent-created)",
+    "/app/backend/tests/test_iteration6.py (TEST_IT6_REMIND_C now agent-created)",
+    "/app/backend/tests/test_iteration7.py (NEW — 42 tests, 7 classes, all passing)",
+    "/app/test_reports/pytest/iteration7.xml (NEW — JUnit output of full regression)"
+  ],
+  "success_rate": {"backend": "100% — 198/198 pass (iter2 39 + iter3 44 + iter4 47 + iter5 17 + iter6 9 + iter7 42)", "frontend": "100% — 29/29 critical testID presence checks pass across distributor, owner, accountant"},
+  "seed_data_creation": "iter7 creates: TEST_IT7_C1 (distributor_id=user_test_agent), TEST_IT7_C2 (distributor_id=user_test_agent2), TEST_IT7_P product, TEST_IT7_DEBTOR for stale-debts flow, one PAY voucher id='pay-idem-fixed-7' for idempotency. Idempotent fixed ids were purged by conftest.py.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run full suite with `cd /app/backend && python -m pytest tests -n 0 --junitxml=/app/test_reports/pytest/<name>.xml` (pytest.ini uses xdist). Session tokens incl. test_token_agent2 in /app/memory/test_credentials.md. New rules enforced across all tests: customers can only be created by FIELD_AGENT; all fields incl. GPS mandatory; owner/acct POST /api/customers → 403; agents are isolated (agent2 does not see agent1 customers). _build_stops now requires 4 args (fix: optimize_route passes r['distributor_id']). Payment-vouchers only accept amount <= -balance (credit). Warehouse-returns life-cycle PENDING→ACCEPTED/REJECTED. Trail = /api/tracking/agents/{uid}/trail?date=YYYY-MM-DD. Stale debts cutoff is 7 days; notifications endpoint returns {items:[], unread:N}. Front-end testIDs verified: tab-ops, distributor-ops-screen, segment-receipts/payments/returns/wreturns, ops-in-today/out-today/net-today, ops-new-<tab>-button, new-payment-sheet, payment-customer-select/amount-input/notes-input, save-payment-button, wreturn-form-sheet, wreturn-product-select, save-wreturn-button, add-customer-button (dist only), customer-type-error, customer-location-error, customers-readonly-note (owner/acct), segment-deliveries, segment-profile, segment-stale, tab-debts, bt-print-button (web-absent).",
+  "rca_of_issue": "RCA: distributor-isolation refactor added `distributor_id` as a required 4th parameter of _build_stops in server.py, and updated save_route to pass it, but optimize_route (line 1438) was overlooked and continued to call with 3 args, causing TypeError → 500 Internal Server Error whenever an agent (or anyone) hit /api/routes/{rid}/optimize. Reproduction: POST /api/routes/{rid}/optimize with any body → 500. Mitigation: pass r['distributor_id'] as the 4th argument. Verified by iter3 TestE_Routes.test_optimize_route_agent (200) and test_optimize_route_owner_forbidden (now 200, per existing code's permissive owner path)."
+}

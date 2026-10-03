@@ -66,6 +66,16 @@ User choices: FastAPI + MongoDB backend, all roles (Developer, Owner, Accountant
 - Live tracking: useApi gained a refetchMs param. /tracking/agents refreshes every 60s in the tracking tab and the map sheet. The sheet follows the latest fix and shows a live dot, "آخر تحديث" time and a refresh button. Distributors now post their location every ~55s (location.ts)
 - Debt reminders: the debts tab has a WhatsApp button per debtor (remind-customer-<id>) that sends a prefilled balance reminder, then POST /api/customers/{cid}/reminded stores last_reminder_at (shown in the row subtitle)
 
+## Iteration 8 (2026-06)
+- DATA RESET: wipe_data.py deleted all business data and kept only the real developer account (DEVELOPER_EMAILS) plus plans/app_settings/app_versions (a JSON backup was written first). seed_test.py re-creates the test accounts (now including a 2nd distributor test_token_agent2)
+- Customer rules: only FIELD_AGENT may POST/PUT /customers (owner/accountant get 403, read-only database with distributor_name, a distributor filter and a full details sheet). Each customer has distributor_id; distributors only see/access their own (org_customer() guard on sales, collections, returns, statement, reminded, payment vouchers, route stops). All fields are mandatory (name, phone ≥7 digits, address, explicit price category, GPS lat/lng), validated on backend and form. DELETE /customers was removed
+- Distributor "العمليات" tab (app/dist/ops.tsx → DistributorOps): receipt vouchers (collections), payment vouchers (POST /api/payment-vouchers, refunds to customers with a credit balance only, balance += amount, PAY-xxxxx), customer returns, and warehouse returns (POST /api/warehouse-returns: deducts distributor stock, PENDING → the owner accepts (warehouse stock +) or rejects with a reason (distributor stock restored) in الإدارة › التسليم والمرتجعات). All are offline-capable and print on 80mm (VoucherSheet)
+- Accountant السندات tab = collections + payment vouchers. The statement includes PAYMENT rows
+- Phone country code: org profile phone_country_code. normPhone adds it to local numbers for WhatsApp
+- Movement trail: GET /api/tracking/agents/{uid}/trail?date=YYYY-MM-DD. "مسار اليوم" mode in AgentMapSheet uses a Leaflet map (CARTO/Esri tiles, no key) with distance and time stats
+- Weekly debt reminders: an hourly loop runs run_debt_digest per org every 7 days and notifies accountants and the owner of debtors not reminded in 7 days. GET /api/debts/stale, POST /api/debts/digest (force). StaleDebtorsCard on the owner/accountant home, plus a "لم يُذكَّروا منذ 7 أيام" filter in the debts tab
+- Bluetooth printing (Android installed build only): react-native-bluetooth-classic + react-native-view-shot + upng-js. The receipt renders as an RN view (ReceiptView) → 576px PNG → ESC/POS raster (bluetooth.ts). PrinterSheet handles permission and picking a paired printer. The regular print button stays for other devices
+
 ## Backlog
 - Background location tracking (requires a native build)
 - P1: PDF/print and share for invoices; offline sales queue; purchase returns; reports by date range

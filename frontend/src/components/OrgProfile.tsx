@@ -17,6 +17,7 @@ const FIELDS: { k: string; label: string; kb?: any }[] = [
   { k: "tax_no", label: "الرقم الضريبي" },
   { k: "cr_no", label: "رقم السجل التجاري" },
   { k: "invoice_footer", label: "نص أسفل الفاتورة" },
+  { k: "phone_country_code", label: "رمز الدولة لأرقام واتساب (مثال: 964)", kb: "number-pad" },
 ];
 
 export function OrgProfile() {

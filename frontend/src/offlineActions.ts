@@ -75,6 +75,32 @@ export async function offlineCustomer(p: { name: string; phone: string; address:
   return doc;
 }
 
+// Payment voucher (سند صرف): cash refund to a customer with a credit balance.
+export async function offlinePayment(p: { customer: any; amount: number; notes: string; userName?: string }) {
+  const id = uid();
+  const body = { id, customer_id: p.customer.id, amount: p.amount, notes: p.notes, ...geo() };
+  const doc = { id, pending: true, voucher_no: tempNo("PAY", id), customer_id: p.customer.id, customer_name: p.customer.name, amount: p.amount, notes: p.notes, distributor_name: p.userName, created_at: new Date().toISOString() };
+  await updateCached<any[]>("/customers", (cs) => cs.map((c) => (c.id === p.customer.id ? { ...c, balance: r2(c.balance + p.amount) } : c)));
+  await updateCached<any[]>("/payment-vouchers", (s) => [doc, ...s]);
+  await enqueue({ id, path: "/payment-vouchers", body, label: `سند صرف · ${p.customer.name} · ${p.amount}` });
+  return doc;
+}
+
+// Distributor stock returned to the main warehouse (owner confirms receipt).
+export async function offlineWarehouseReturn(items: { product_id: string; product_name: string; quantity: number }[], notes: string, userName?: string) {
+  const id = uid();
+  const doc = { id, pending: true, return_no: tempNo("WRT", id), items, notes, status: "PENDING", distributor_name: userName, created_at: new Date().toISOString() };
+  await updateCached<any[]>("/my/inventory", (inv) =>
+    inv.map((i) => {
+      const l = items.find((x) => x.product_id === i.product_id);
+      return l ? { ...i, quantity: r2(i.quantity - l.quantity) } : i;
+    }),
+  );
+  await updateCached<any[]>("/warehouse-returns", (s) => [doc, ...s]);
+  await enqueue({ id, path: "/warehouse-returns", body: { id, items: items.map(({ product_id, quantity }) => ({ product_id, quantity })), notes }, label: `إرجاع للمستودع · ${items.length} صنف` });
+  return doc;
+}
+
 export async function offlineStopStatus(route: any, stop: any, status: "VISITED" | "SKIPPED" | "PENDING") {
   const id = uid();
   await updateCached<any>("/routes/mine", (r) =>

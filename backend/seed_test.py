@@ -18,6 +18,7 @@ USERS = [
     ("user_test_dev", "dev@test.com", "مطور تجريبي", "DEVELOPER", None, None, "test_token_dev"),
     ("user_test_owner", "owner@test.com", "أحمد المالك", "OWNER", None, ORG, "test_token_owner"),
     ("user_test_agent", "agent@test.com", "سامر الموزع", "EMPLOYEE", "FIELD_AGENT", ORG, "test_token_agent"),
+    ("user_test_agent2", "agent2@test.com", "كريم الموزع", "EMPLOYEE", "FIELD_AGENT", ORG, "test_token_agent2"),
     ("user_test_acct", "acct@test.com", "ليلى المحاسبة", "EMPLOYEE", "ACCOUNTANT", ORG, "test_token_acct"),
     ("user_test_new", "new@test.com", "مستخدم جديد", None, None, None, "test_token_new"),
 ]

@@ -1,0 +1,412 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="39" skipped="0" tests="156" time="21.935" timestamp="2026-10-03T23:29:42.056031+00:00" hostname="agent-env-22e355e1-884c-42da-bc15-173d01ef0382"><testcase classname="tests.test_iteration2.TestOrgProfile" name="test_get_profile_default" time="0.206" /><testcase classname="tests.test_iteration2.TestOrgProfile" name="test_update_profile_persists" time="0.155" /><testcase classname="tests.test_iteration2.TestOrgProfile" name="test_update_profile_requires_owner" time="0.072" /><testcase classname="tests.test_iteration2.TestOrgProfile" name="test_agent_can_get_profile" time="0.120" /><testcase classname="tests.test_iteration2.TestOrgProfile" name="test_logo_bad_data_rejected" time="0.070" /><testcase classname="tests.test_iteration2.TestOrgProfile" name="test_get_logo_returns_data_uri_shape" time="0.074" /><testcase classname="tests.test_iteration2.TestPlans" name="test_create_plan_dev" time="0.065" /><testcase classname="tests.test_iteration2.TestPlans" name="test_create_plan_inactive" time="0.062" /><testcase classname="tests.test_iteration2.TestPlans" name="test_owner_sees_only_active_plans" time="0.066" /><testcase classname="tests.test_iteration2.TestPlans" name="test_dev_sees_all_plans" time="0.059" /><testcase classname="tests.test_iteration2.TestPlans" name="test_plan_crud_denied_for_non_dev" time="0.069" /><testcase classname="tests.test_iteration2.TestPlans" name="test_update_plan" time="0.068" /><testcase classname="tests.test_iteration2.TestPaymentSettings" name="test_update_payment_dev" time="0.075" /><testcase classname="tests.test_iteration2.TestPaymentSettings" name="test_owner_can_read_payment" time="0.060" /><testcase classname="tests.test_iteration2.TestPaymentSettings" name="test_payment_update_requires_dev" time="0.073" /><testcase classname="tests.test_iteration2.TestUpgradeRequests" name="test_owner_submits_upgrade" time="0.061" /><testcase classname="tests.test_iteration2.TestUpgradeRequests" name="test_single_pending_enforced" time="0.087" /><testcase classname="tests.test_iteration2.TestUpgradeRequests" name="test_owner_lists_own_requests" time="0.062" /><testcase classname="tests.test_iteration2.TestUpgradeRequests" name="test_dev_lists_all_requests" time="0.061" /><testcase classname="tests.test_iteration2.TestUpgradeRequests" name="test_agent_forbidden_from_requests" time="0.060" /><testcase classname="tests.test_iteration2.TestUpgradeRequests" name="test_missing_payment_ref_rejected" time="0.131" /><testcase classname="tests.test_iteration2.TestUpgradeRequests" name="test_approve_extends_org" time="0.265" /><testcase classname="tests.test_iteration2.TestReports" name="test_reports_day_owner" time="0.074" /><testcase classname="tests.test_iteration2.TestReports" name="test_reports_week" time="0.067" /><testcase classname="tests.test_iteration2.TestReports" name="test_reports_month" time="0.062" /><testcase classname="tests.test_iteration2.TestReports" name="test_reports_bad_period" time="0.069" /><testcase classname="tests.test_iteration2.TestReports" name="test_reports_accountant_no_profit" time="0.070" /><testcase classname="tests.test_iteration2.TestReports" name="test_reports_agent_forbidden" time="0.059" /><testcase classname="tests.test_iteration2.TestTracking" name="test_agent_posts_location" time="0.061" /><testcase classname="tests.test_iteration2.TestTracking" name="test_non_agent_cannot_post_location" time="0.059" /><testcase classname="tests.test_iteration2.TestTracking" name="test_owner_lists_agents_locations" time="0.065" /><testcase classname="tests.test_iteration2.TestTracking" name="test_accountant_lists_tracking" time="0.060" /><testcase classname="tests.test_iteration2.TestTracking" name="test_agent_cannot_list_tracking" time="0.059" /><testcase classname="tests.test_iteration2.TestIdempotency" name="test_customer_idempotent_create" time="0.063"><failure message="assert 403 == 200&#10; +  where 403 = &lt;Response [403]&gt;.status_code">self = &lt;test_iteration2.TestIdempotency object at 0xf9170f620410&gt;
+
+    def test_customer_idempotent_create(self):
+        cid = "test-idem-cust-fixed-id"
+        payload = {"id": cid, "name": "TEST_IDEM_FIXED", "phone": "123"}
+        r1 = requests.post(f"{API}/customers", headers=H("owner"), json=payload)
+&gt;       assert r1.status_code == 200
+E       assert 403 == 200
+E        +  where 403 = &lt;Response [403]&gt;.status_code
+
+tests/test_iteration2.py:275: AssertionError</failure></testcase><testcase classname="tests.test_iteration2.TestIdempotency" name="test_sale_idempotent_no_double_apply" time="0.338"><failure message="KeyError: 'id'">self = &lt;test_iteration2.TestIdempotency object at 0xf9170f620990&gt;
+
+    def test_sale_idempotent_no_double_apply(self):
+&gt;       self._setup()
+
+tests/test_iteration2.py:283: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;test_iteration2.TestIdempotency object at 0xf9170f620990&gt;
+
+    def _setup(self):
+        # Need an agent with inventory for a product + a customer
+        prods = requests.get(f"{API}/products", headers=H("owner")).json()
+        pid = next((p["id"] for p in prods if p["stock"] &gt;= 0 and p["sale_price"] &gt; 0), None)
+        if not pid:
+            r = requests.post(f"{API}/products", headers=H("owner"),
+                             json={"name": "TEST_IDEM_P", "cost_price": 2, "sale_price": 10, "stock": 0, "min_stock": 0})
+            pid = r.json()["id"]
+            requests.post(f"{API}/purchases", headers=H("owner"),
+                         json={"product_id": pid, "quantity": 50, "unit_cost": 2})
+        # ensure agent inventory
+        requests.post(f"{API}/deliveries", headers=H("owner"),
+                     json={"distributor_id": "user_test_agent", "items": [{"product_id": pid, "quantity": 20}]})
+        STATE["idem_pid"] = pid
+        # customer
+        r = requests.post(f"{API}/customers", headers=H("owner"),
+                         json={"name": "TEST_IDEM_CUST"})
+&gt;       STATE["idem_cid"] = r.json()["id"]
+                            ^^^^^^^^^^^^^^
+E       KeyError: 'id'
+
+tests/test_iteration2.py:269: KeyError</failure></testcase><testcase classname="tests.test_iteration2.TestIdempotency" name="test_collection_idempotent" time="0.000"><failure message="KeyError: 'idem_cid'">self = &lt;test_iteration2.TestIdempotency object at 0xf9170f620f10&gt;
+
+    def test_collection_idempotent(self):
+&gt;       cid = STATE["idem_cid"]
+              ^^^^^^^^^^^^^^^^^
+E       KeyError: 'idem_cid'
+
+tests/test_iteration2.py:307: KeyError</failure></testcase><testcase classname="tests.test_iteration2.TestIdempotency" name="test_sales_return_idempotent" time="0.000"><failure message="KeyError: 'idem_cid'">self = &lt;test_iteration2.TestIdempotency object at 0xf9170f6214d0&gt;
+
+    def test_sales_return_idempotent(self):
+        pid = STATE["idem_pid"]
+&gt;       cid = STATE["idem_cid"]
+              ^^^^^^^^^^^^^^^^^
+E       KeyError: 'idem_cid'
+
+tests/test_iteration2.py:325: KeyError</failure></testcase><testcase classname="tests.test_iteration2.TestUpgradeFromExpired" name="test_owner_can_request_upgrade_while_suspended" time="0.313" /><testcase classname="tests.test_iteration2" name="test_zz_cleanup" time="0.128" /><testcase classname="tests.test_iteration3.TestA_Setup" name="test_setup_product" time="0.193" /><testcase classname="tests.test_iteration3.TestA_Setup" name="test_setup_deliver_to_agent" time="0.148" /><testcase classname="tests.test_iteration3.TestB_CustomerTypes" name="test_create_type_owner" time="0.068" /><testcase classname="tests.test_iteration3.TestB_CustomerTypes" name="test_create_type_agent_forbidden" time="0.063" /><testcase classname="tests.test_iteration3.TestB_CustomerTypes" name="test_list_types_all_org" time="0.186" /><testcase classname="tests.test_iteration3.TestB_CustomerTypes" name="test_type_empty_name_rejected" time="0.077" /><testcase classname="tests.test_iteration3.TestB_CustomerTypes" name="test_type_bad_price_rejected" time="0.057" /><testcase classname="tests.test_iteration3.TestB_CustomerTypes" name="test_update_type" time="0.059" /><testcase classname="tests.test_iteration3.TestC_CustomersTyped" name="test_create_customer_with_type_and_geo" time="0.063"><failure message="AssertionError: {&quot;detail&quot;:&quot;ليس لديك صلاحية&quot;}&#10;assert 403 == 200&#10; +  where 403 = &lt;Response [403]&gt;.status_code">self = &lt;test_iteration3.TestC_CustomersTyped object at 0xf9170f633450&gt;
+
+    def test_create_customer_with_type_and_geo(self):
+        r = requests.post(f"{API}/customers", headers=H("owner"),
+                          json={"name": "TEST_ITER3_CUST_TYPED", "phone": "100",
+                                "type_id": STATE["type_id"], "lat": 33.3, "lng": 44.3})
+&gt;       assert r.status_code == 200, r.text
+E       AssertionError: {"detail":"ليس لديك صلاحية"}
+E       assert 403 == 200
+E        +  where 403 = &lt;Response [403]&gt;.status_code
+
+tests/test_iteration3.py:97: AssertionError</failure></testcase><testcase classname="tests.test_iteration3.TestC_CustomersTyped" name="test_create_customer_without_type" time="0.067"><failure message="assert 403 == 200&#10; +  where 403 = &lt;Response [403]&gt;.status_code">self = &lt;test_iteration3.TestC_CustomersTyped object at 0xf9170f6339d0&gt;
+
+    def test_create_customer_without_type(self):
+        r = requests.post(f"{API}/customers", headers=H("owner"),
+                          json={"name": "TEST_ITER3_CUST_NO_LOC", "phone": "101"})
+&gt;       assert r.status_code == 200
+E       assert 403 == 200
+E        +  where 403 = &lt;Response [403]&gt;.status_code
+
+tests/test_iteration3.py:106: AssertionError</failure></testcase><testcase classname="tests.test_iteration3.TestD_SalePriceLocking" name="test_sale_typed_customer_uses_type_price" time="0.000"><failure message="KeyError: 'cust_typed'">self = &lt;test_iteration3.TestD_SalePriceLocking object at 0xf9170f638150&gt;
+
+    def test_sale_typed_customer_uses_type_price(self):
+&gt;       payload = {"customer_id": STATE["cust_typed"], "lat": 10.0, "lng": 20.0,
+                                  ^^^^^^^^^^^^^^^^^^^
+                   "items": [{"product_id": STATE["pid"], "quantity": 2, "price": 999}], "paid_amount": 0}
+E       KeyError: 'cust_typed'
+
+tests/test_iteration3.py:114: KeyError</failure></testcase><testcase classname="tests.test_iteration3.TestD_SalePriceLocking" name="test_sale_untyped_uses_product_sale_price" time="0.000"><failure message="KeyError: 'cust_untyped'">self = &lt;test_iteration3.TestD_SalePriceLocking object at 0xf9170f6386d0&gt;
+
+    def test_sale_untyped_uses_product_sale_price(self):
+&gt;       payload = {"customer_id": STATE["cust_untyped"],
+                                  ^^^^^^^^^^^^^^^^^^^^^
+                   "items": [{"product_id": STATE["pid"], "quantity": 1, "price": 1}], "paid_amount": 0}
+E       KeyError: 'cust_untyped'
+
+tests/test_iteration3.py:123: KeyError</failure></testcase><testcase classname="tests.test_iteration3.TestD_SalePriceLocking" name="test_sale_sets_customer_lat_lng_when_missing" time="0.000"><failure message="KeyError: 'cust_untyped'">self = &lt;test_iteration3.TestD_SalePriceLocking object at 0xf9170f638c90&gt;
+
+    def test_sale_sets_customer_lat_lng_when_missing(self):
+        # cust_untyped had no lat; a sale sent lat/lng -&gt; should be stored on customer
+&gt;       payload = {"customer_id": STATE["cust_untyped"], "lat": 55.5, "lng": 66.6,
+                                  ^^^^^^^^^^^^^^^^^^^^^
+                   "items": [{"product_id": STATE["pid"], "quantity": 1, "price": 1}], "paid_amount": 0}
+E       KeyError: 'cust_untyped'
+
+tests/test_iteration3.py:131: KeyError</failure></testcase><testcase classname="tests.test_iteration3.TestD_SalePriceLocking" name="test_sales_return_uses_type_price" time="0.000"><failure message="KeyError: 'cust_typed'">self = &lt;test_iteration3.TestD_SalePriceLocking object at 0xf9170f639310&gt;
+
+    def test_sales_return_uses_type_price(self):
+&gt;       payload = {"customer_id": STATE["cust_typed"],
+                                  ^^^^^^^^^^^^^^^^^^^
+                   "items": [{"product_id": STATE["pid"], "quantity": 1, "price": 999}], "reason": "x"}
+E       KeyError: 'cust_typed'
+
+tests/test_iteration3.py:139: KeyError</failure></testcase><testcase classname="tests.test_iteration3.TestE_Routes" name="test_save_route_owner" time="0.000"><failure message="KeyError: 'cust_typed'">self = &lt;test_iteration3.TestE_Routes object at 0xf9170f6399d0&gt;
+
+    def test_save_route_owner(self):
+        today = "2026-01-20"
+        r = requests.post(f"{API}/routes", headers=H("owner"),
+                          json={"distributor_id": "user_test_agent", "date": today,
+&gt;                               "customer_ids": [STATE["cust_typed"], STATE["cust_untyped"]]})
+                                                 ^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'cust_typed'
+
+tests/test_iteration3.py:152: KeyError</failure></testcase><testcase classname="tests.test_iteration3.TestE_Routes" name="test_save_route_agent_forbidden" time="0.059" /><testcase classname="tests.test_iteration3.TestE_Routes" name="test_bad_distributor_404" time="0.062" /><testcase classname="tests.test_iteration3.TestE_Routes" name="test_list_routes_filter" time="0.000"><failure message="KeyError: 'route_date'">self = &lt;test_iteration3.TestE_Routes object at 0xf9170f631110&gt;
+
+    def test_list_routes_filter(self):
+&gt;       r = requests.get(f"{API}/routes?date={STATE['route_date']}&amp;distributor_id=user_test_agent", headers=H("owner"))
+                                              ^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'route_date'
+
+tests/test_iteration3.py:171: KeyError</failure></testcase><testcase classname="tests.test_iteration3.TestE_Routes" name="test_agent_my_route" time="0.000"><failure message="KeyError: 'route_date'">self = &lt;test_iteration3.TestE_Routes object at 0xf9170f639b90&gt;
+
+    def test_agent_my_route(self):
+&gt;       r = requests.get(f"{API}/routes/mine?date={STATE['route_date']}", headers=H("agent"))
+                                                   ^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'route_date'
+
+tests/test_iteration3.py:176: KeyError</failure></testcase><testcase classname="tests.test_iteration3.TestE_Routes" name="test_stop_status_update" time="0.000"><failure message="KeyError: 'route_id'">self = &lt;test_iteration3.TestE_Routes object at 0xf9170f63a590&gt;
+
+    def test_stop_status_update(self):
+&gt;       rid, cid = STATE["route_id"], STATE["cust_typed"]
+                   ^^^^^^^^^^^^^^^^^
+E       KeyError: 'route_id'
+
+tests/test_iteration3.py:181: KeyError</failure></testcase><testcase classname="tests.test_iteration3.TestE_Routes" name="test_stop_status_invalid" time="0.000"><failure message="KeyError: 'route_id'">self = &lt;test_iteration3.TestE_Routes object at 0xf9170f63a890&gt;
+
+    def test_stop_status_invalid(self):
+&gt;       r = requests.post(f"{API}/routes/{STATE['route_id']}/stops/{STATE['cust_typed']}/status",
+                                          ^^^^^^^^^^^^^^^^^
+                          headers=H("agent"), json={"status": "WRONG"})
+E       KeyError: 'route_id'
+
+tests/test_iteration3.py:191: KeyError</failure></testcase><testcase classname="tests.test_iteration3.TestE_Routes" name="test_upsert_preserves_statuses" time="0.000"><failure message="KeyError: 'route_date'">self = &lt;test_iteration3.TestE_Routes object at 0xf9170f63ab90&gt;
+
+    def test_upsert_preserves_statuses(self):
+        r = requests.post(f"{API}/routes", headers=H("owner"),
+&gt;                         json={"distributor_id": "user_test_agent", "date": STATE["route_date"],
+                                                                             ^^^^^^^^^^^^^^^^^^^
+                                "customer_ids": [STATE["cust_typed"], STATE["cust_untyped"]]})
+E       KeyError: 'route_date'
+
+tests/test_iteration3.py:197: KeyError</failure></testcase><testcase classname="tests.test_iteration3.TestE_Routes" name="test_optimize_route_agent" time="0.000"><failure message="KeyError: 'route_id'">self = &lt;test_iteration3.TestE_Routes object at 0xf9170f63ae90&gt;
+
+    def test_optimize_route_agent(self):
+        # typed has lat 33.3,44.3 ; untyped now has 55.5,66.6 (set via sale)
+&gt;       r = requests.post(f"{API}/routes/{STATE['route_id']}/optimize", headers=H("agent"),
+                                          ^^^^^^^^^^^^^^^^^
+                          json={"lat": 33.0, "lng": 44.0})
+E       KeyError: 'route_id'
+
+tests/test_iteration3.py:205: KeyError</failure></testcase><testcase classname="tests.test_iteration3.TestE_Routes" name="test_optimize_route_owner_forbidden" time="0.000"><failure message="KeyError: 'route_id'">self = &lt;test_iteration3.TestE_Routes object at 0xf9170f63b150&gt;
+
+    def test_optimize_route_owner_forbidden(self):
+        # owner (ROLE OWNER) is allowed only through AGENT, but endpoint uses ANY_ORG + employee_type gate
+        # Owner is role OWNER not EMPLOYEE -&gt; allowed per code
+&gt;       r = requests.post(f"{API}/routes/{STATE['route_id']}/optimize", headers=H("owner"), json={})
+                                          ^^^^^^^^^^^^^^^^^
+E       KeyError: 'route_id'
+
+tests/test_iteration3.py:218: KeyError</failure></testcase><testcase classname="tests.test_iteration3.TestE_Routes" name="test_optimize_accountant_forbidden" time="0.000"><failure message="KeyError: 'route_id'">self = &lt;test_iteration3.TestE_Routes object at 0xf9170f63b6d0&gt;
+
+    def test_optimize_accountant_forbidden(self):
+&gt;       r = requests.post(f"{API}/routes/{STATE['route_id']}/optimize", headers=H("acct"), json={})
+                                          ^^^^^^^^^^^^^^^^^
+E       KeyError: 'route_id'
+
+tests/test_iteration3.py:222: KeyError</failure></testcase><testcase classname="tests.test_iteration3.TestE_Routes" name="test_delete_route" time="0.000"><failure message="KeyError: 'cust_typed'">self = &lt;test_iteration3.TestE_Routes object at 0xf9170f63bc50&gt;
+
+    def test_delete_route(self):
+        # Create a throwaway route and delete it
+        r = requests.post(f"{API}/routes", headers=H("owner"),
+                          json={"distributor_id": "user_test_agent", "date": "2026-01-30",
+&gt;                               "customer_ids": [STATE["cust_typed"]]})
+                                                 ^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'cust_typed'
+
+tests/test_iteration3.py:229: KeyError</failure></testcase><testcase classname="tests.test_iteration3.TestF_StockRequests" name="test_my_inventory_includes_min_stock" time="0.077" /><testcase classname="tests.test_iteration3.TestF_StockRequests" name="test_agent_create_stock_request" time="0.069" /><testcase classname="tests.test_iteration3.TestF_StockRequests" name="test_idempotent_stock_request" time="0.107" /><testcase classname="tests.test_iteration3.TestF_StockRequests" name="test_create_stock_request_empty_rejected" time="0.062" /><testcase classname="tests.test_iteration3.TestF_StockRequests" name="test_owner_lists_all_requests" time="0.056" /><testcase classname="tests.test_iteration3.TestF_StockRequests" name="test_agent_list_scoped" time="0.058" /><testcase classname="tests.test_iteration3.TestF_StockRequests" name="test_owner_create_forbidden" time="0.060" /><testcase classname="tests.test_iteration3.TestF_StockRequests" name="test_fulfill_insufficient_warehouse_returns_400" time="0.280" /><testcase classname="tests.test_iteration3.TestF_StockRequests" name="test_fulfill_success" time="0.274" /><testcase classname="tests.test_iteration3.TestF_StockRequests" name="test_reject_pending_request" time="0.064" /><testcase classname="tests.test_iteration3.TestF_StockRequests" name="test_fulfill_non_pending_404" time="0.069" /><testcase classname="tests.test_iteration3.TestG_YearlyPlans" name="test_dev_creates_plan_with_yearly" time="0.067" /><testcase classname="tests.test_iteration3.TestG_YearlyPlans" name="test_dev_creates_plan_no_yearly" time="0.061" /><testcase classname="tests.test_iteration3.TestG_YearlyPlans" name="test_clear_pending_upgrade" time="0.126" /><testcase classname="tests.test_iteration3.TestG_YearlyPlans" name="test_yearly_upgrade_uses_yearly_price_and_365_days" time="0.061" /><testcase classname="tests.test_iteration3.TestG_YearlyPlans" name="test_yearly_rejected_when_no_yearly_price" time="0.135" /><testcase classname="tests.test_iteration3.TestG_YearlyPlans" name="test_monthly_billing_still_works" time="0.065" /><testcase classname="tests.test_iteration3" name="test_zz_cleanup" time="0.351" /><testcase classname="tests.test_iteration4.TestA_Setup" name="test_auth_me_all_roles" time="0.252" /><testcase classname="tests.test_iteration4.TestA_Setup" name="test_setup_product_and_customer" time="0.315"><failure message="AssertionError: {&quot;detail&quot;:&quot;ليس لديك صلاحية&quot;}&#10;assert 403 == 200&#10; +  where 403 = &lt;Response [403]&gt;.status_code">self = &lt;test_iteration4.TestA_Setup object at 0xf9170f65d190&gt;
+
+    def test_setup_product_and_customer(self):
+        prods = requests.get(f"{API}/products", headers=H("owner")).json()
+        p = next((x for x in prods if x["name"] == "TEST_IT4_P"), None)
+        if not p:
+            r = requests.post(f"{API}/products", headers=H("owner"),
+                              json={"name": "TEST_IT4_P", "cost_price": 2, "sale_price": 10, "stock": 0, "min_stock": 5})
+            assert r.status_code == 200, r.text
+            p = r.json()
+        S["pid"] = p["id"]
+        # Ensure warehouse stock
+        requests.post(f"{API}/purchases", headers=H("owner"),
+                      json={"product_id": p["id"], "quantity": 500, "unit_cost": 2})
+        custs = requests.get(f"{API}/customers", headers=H("owner")).json()
+        c = next((x for x in custs if x["name"] == "TEST_IT4_C"), None)
+        if not c:
+            r = requests.post(f"{API}/customers", headers=H("owner"),
+                              json={"name": "TEST_IT4_C", "phone": "999"})
+&gt;           assert r.status_code == 200, r.text
+E           AssertionError: {"detail":"ليس لديك صلاحية"}
+E           assert 403 == 200
+E            +  where 403 = &lt;Response [403]&gt;.status_code
+
+tests/test_iteration4.py:57: AssertionError</failure></testcase><testcase classname="tests.test_iteration4.TestB_DeliveryConfirmReject" name="test_delivery_starts_pending" time="0.113" /><testcase classname="tests.test_iteration4.TestB_DeliveryConfirmReject" name="test_agent_confirm_delivery_adds_inventory" time="0.193" /><testcase classname="tests.test_iteration4.TestB_DeliveryConfirmReject" name="test_double_confirm_404" time="0.070" /><testcase classname="tests.test_iteration4.TestB_DeliveryConfirmReject" name="test_reject_delivery_returns_stock_to_warehouse" time="0.250" /><testcase classname="tests.test_iteration4.TestB_DeliveryConfirmReject" name="test_owner_cannot_confirm_delivery" time="0.213" /><testcase classname="tests.test_iteration4.TestC_DiscountsAndVoid" name="test_sale_with_percent_discount" time="0.000"><failure message="KeyError: 'cid'">self = &lt;test_iteration4.TestC_DiscountsAndVoid object at 0xf9170f65f010&gt;
+
+    def test_sale_with_percent_discount(self):
+&gt;       payload = {"customer_id": S["cid"],
+                                  ^^^^^^^^
+                   "items": [{"product_id": S["pid"], "quantity": 10, "price": 10}],
+                   "discount_type": "PERCENT", "discount_value": 10, "paid_amount": 0}
+E       KeyError: 'cid'
+
+tests/test_iteration4.py:120: KeyError</failure></testcase><testcase classname="tests.test_iteration4.TestC_DiscountsAndVoid" name="test_sale_with_fixed_discount" time="0.000"><failure message="KeyError: 'cid'">self = &lt;test_iteration4.TestC_DiscountsAndVoid object at 0xf9170f65f590&gt;
+
+    def test_sale_with_fixed_discount(self):
+&gt;       payload = {"customer_id": S["cid"],
+                                  ^^^^^^^^
+                   "items": [{"product_id": S["pid"], "quantity": 5, "price": 10}],
+                   "discount_type": "FIXED", "discount_value": 7, "paid_amount": 43}
+E       KeyError: 'cid'
+
+tests/test_iteration4.py:133: KeyError</failure></testcase><testcase classname="tests.test_iteration4.TestC_DiscountsAndVoid" name="test_discount_capped_at_subtotal" time="0.000"><failure message="KeyError: 'cid'">self = &lt;test_iteration4.TestC_DiscountsAndVoid object at 0xf9170f65fb10&gt;
+
+    def test_discount_capped_at_subtotal(self):
+&gt;       payload = {"customer_id": S["cid"],
+                                  ^^^^^^^^
+                   "items": [{"product_id": S["pid"], "quantity": 1, "price": 10}],
+                   "discount_type": "FIXED", "discount_value": 9999, "paid_amount": 0}
+E       KeyError: 'cid'
+
+tests/test_iteration4.py:146: KeyError</failure></testcase><testcase classname="tests.test_iteration4.TestC_DiscountsAndVoid" name="test_void_sale_restores_inventory_and_balance" time="0.000"><failure message="KeyError: 'cid'">self = &lt;test_iteration4.TestC_DiscountsAndVoid object at 0xf9170f664150&gt;
+
+    def test_void_sale_restores_inventory_and_balance(self):
+        # Make a known sale
+&gt;       payload = {"customer_id": S["cid"], "items": [{"product_id": S["pid"], "quantity": 3, "price": 10}], "paid_amount": 0}
+                                  ^^^^^^^^
+E       KeyError: 'cid'
+
+tests/test_iteration4.py:157: KeyError</failure></testcase><testcase classname="tests.test_iteration4.TestC_DiscountsAndVoid" name="test_double_void_404" time="0.000"><failure message="KeyError: 'cid'">self = &lt;test_iteration4.TestC_DiscountsAndVoid object at 0xf9170f6647d0&gt;
+
+    def test_double_void_404(self):
+&gt;       payload = {"customer_id": S["cid"], "items": [{"product_id": S["pid"], "quantity": 1, "price": 10}], "paid_amount": 0}
+                                  ^^^^^^^^
+E       KeyError: 'cid'
+
+tests/test_iteration4.py:180: KeyError</failure></testcase><testcase classname="tests.test_iteration4.TestC_DiscountsAndVoid" name="test_agent_cannot_void" time="0.000"><failure message="KeyError: 'cid'">self = &lt;test_iteration4.TestC_DiscountsAndVoid object at 0xf9170f664e90&gt;
+
+    def test_agent_cannot_void(self):
+&gt;       payload = {"customer_id": S["cid"], "items": [{"product_id": S["pid"], "quantity": 1, "price": 10}], "paid_amount": 0}
+                                  ^^^^^^^^
+E       KeyError: 'cid'
+
+tests/test_iteration4.py:188: KeyError</failure></testcase><testcase classname="tests.test_iteration4.TestD_PurchaseReturnsAndMovements" name="test_purchase_return_decrements_stock" time="0.191" /><testcase classname="tests.test_iteration4.TestD_PurchaseReturnsAndMovements" name="test_purchase_return_insufficient_stock_400" time="0.074" /><testcase classname="tests.test_iteration4.TestD_PurchaseReturnsAndMovements" name="test_agent_cannot_create_purchase_return" time="0.064" /><testcase classname="tests.test_iteration4.TestD_PurchaseReturnsAndMovements" name="test_list_purchase_returns" time="0.125" /><testcase classname="tests.test_iteration4.TestD_PurchaseReturnsAndMovements" name="test_stock_movements_for_product" time="0.072"><failure message="AssertionError: assert ('SALE' in {'DELIVERY', 'DELIVERY_REJECTED', 'PURCHASE', 'PURCHASE_RETURN'} or 'SALE_VOID' in {'DELIVERY', 'DELIVERY_REJECTED', 'PURCHASE', 'PURCHASE_RETURN'})">self = &lt;test_iteration4.TestD_PurchaseReturnsAndMovements object at 0xf9170f65ebd0&gt;
+
+    def test_stock_movements_for_product(self):
+        r = requests.get(f"{API}/stock-movements?product_id={S['pid']}", headers=H("owner"))
+        assert r.status_code == 200
+        kinds = {m["type"] for m in r.json()}
+        # Should have PURCHASE, DELIVERY, SALE, RETURN, PURCHASE_RETURN...
+        assert "PURCHASE" in kinds
+        assert "DELIVERY" in kinds
+&gt;       assert "SALE" in kinds or "SALE_VOID" in kinds
+E       AssertionError: assert ('SALE' in {'DELIVERY', 'DELIVERY_REJECTED', 'PURCHASE', 'PURCHASE_RETURN'} or 'SALE_VOID' in {'DELIVERY', 'DELIVERY_REJECTED', 'PURCHASE', 'PURCHASE_RETURN'})
+
+tests/test_iteration4.py:233: AssertionError</failure></testcase><testcase classname="tests.test_iteration4.TestD_PurchaseReturnsAndMovements" name="test_price_history_on_product_update" time="7.419" /><testcase classname="tests.test_iteration4.TestE_Notifications" name="test_agent_notifications_contain_delivery" time="0.057" /><testcase classname="tests.test_iteration4.TestE_Notifications" name="test_mark_read_all" time="0.122" /><testcase classname="tests.test_iteration4.TestF_StatsAlertsAndFinance" name="test_alerts_list" time="0.062" /><testcase classname="tests.test_iteration4.TestF_StatsAlertsAndFinance" name="test_finance_structure" time="0.077"><failure message="assert (0 + 0) &gt; 0">self = &lt;test_iteration4.TestF_StatsAlertsAndFinance object at 0xf9170f667790&gt;
+
+    def test_finance_structure(self):
+        r = requests.get(f"{API}/stats/finance", headers=H("acct"))
+        assert r.status_code == 200
+        d = r.json()
+        for k in ("sales_total", "invoice_count", "cash_total", "credit_total",
+                  "cash_discounts", "credit_discounts", "collections_total",
+                  "debt_customers", "debts_total", "purchases_total",
+                  "purchase_returns_total", "top_discount_customers"):
+            assert k in d, f"missing {k}"
+        # we created a 7 fixed-discount + 10 percent-discount sale -&gt; cash_discounts + credit_discounts &gt; 0
+&gt;       assert (d["cash_discounts"] + d["credit_discounts"]) &gt; 0
+E       assert (0 + 0) &gt; 0
+
+tests/test_iteration4.py:284: AssertionError</failure></testcase><testcase classname="tests.test_iteration4.TestF_StatsAlertsAndFinance" name="test_finance_forbidden_for_agent" time="0.066" /><testcase classname="tests.test_iteration4.TestG_RouteKPIs" name="test_route_kpis_structure" time="0.073" /><testcase classname="tests.test_iteration4.TestG_RouteKPIs" name="test_kpis_forbidden_for_not_in_org" time="0.065" /><testcase classname="tests.test_iteration4.TestH_OrgCurrency" name="test_owner_sets_currency" time="1.073" /><testcase classname="tests.test_iteration4.TestH_OrgCurrency" name="test_agent_cannot_set_currency" time="0.084" /><testcase classname="tests.test_iteration4.TestI_BackupExport" name="test_backup_owner" time="0.104" /><testcase classname="tests.test_iteration4.TestI_BackupExport" name="test_backup_agent_forbidden" time="0.068" /><testcase classname="tests.test_iteration4.TestJ_DeletionRequests" name="test_owner_create_deletion_request" time="0.126" /><testcase classname="tests.test_iteration4.TestJ_DeletionRequests" name="test_double_pending_rejected" time="0.055" /><testcase classname="tests.test_iteration4.TestJ_DeletionRequests" name="test_dev_lists_all_requests" time="0.067" /><testcase classname="tests.test_iteration4.TestJ_DeletionRequests" name="test_dev_rejects_request" time="0.062" /><testcase classname="tests.test_iteration4.TestJ_DeletionRequests" name="test_owner_cannot_delete_own_account" time="0.070" /><testcase classname="tests.test_iteration4.TestK_Consent" name="test_consent_set" time="0.078" /><testcase classname="tests.test_iteration4.TestL_AppVersions" name="test_dev_create_version" time="0.075" /><testcase classname="tests.test_iteration4.TestL_AppVersions" name="test_latest_version_public" time="0.067" /><testcase classname="tests.test_iteration4.TestL_AppVersions" name="test_list_versions_dev_only" time="0.206" /><testcase classname="tests.test_iteration4.TestL_AppVersions" name="test_delete_version" time="0.085" /><testcase classname="tests.test_iteration4.TestM_Monitoring" name="test_monitoring_dev" time="0.081" /><testcase classname="tests.test_iteration4.TestM_Monitoring" name="test_monitoring_owner_forbidden" time="0.061" /><testcase classname="tests.test_iteration4.TestN_RoleGating" name="test_new_user_no_org_blocked" time="0.168" /><testcase classname="tests.test_iteration4.TestN_RoleGating" name="test_agent_cannot_create_product" time="0.070" /><testcase classname="tests.test_iteration4.TestN_RoleGating" name="test_accountant_cannot_create_sale" time="0.000"><failure message="KeyError: 'cid'">self = &lt;test_iteration4.TestN_RoleGating object at 0xf9170f47ded0&gt;
+
+    def test_accountant_cannot_create_sale(self):
+        r = requests.post(f"{API}/sales", headers=H("acct"),
+&gt;                         json={"customer_id": S["cid"], "items": [{"product_id": S["pid"], "quantity": 1}]})
+                                               ^^^^^^^^
+E       KeyError: 'cid'
+
+tests/test_iteration4.py:447: KeyError</failure></testcase><testcase classname="tests.test_iteration4.TestN_RoleGating" name="test_bad_token_401" time="0.082" /><testcase classname="tests.test_iteration4.TestO_Reports" name="test_reports_day_week_month" time="0.200" /><testcase classname="tests.test_iteration5.TestA_LeaderboardAccess" name="test_owner_can_fetch" time="0.086" /><testcase classname="tests.test_iteration5.TestA_LeaderboardAccess" name="test_accountant_can_fetch" time="0.081" /><testcase classname="tests.test_iteration5.TestA_LeaderboardAccess" name="test_agent_forbidden" time="0.075" /><testcase classname="tests.test_iteration5.TestA_LeaderboardAccess" name="test_new_user_forbidden" time="0.069" /><testcase classname="tests.test_iteration5.TestA_LeaderboardAccess" name="test_bad_token_401" time="0.066" /><testcase classname="tests.test_iteration5.TestB_LeaderboardShape" name="test_default_month_is_current" time="0.078" /><testcase classname="tests.test_iteration5.TestB_LeaderboardShape" name="test_explicit_current_month" time="0.075" /><testcase classname="tests.test_iteration5.TestB_LeaderboardShape" name="test_row_fields_present" time="0.068" /><testcase classname="tests.test_iteration5.TestB_LeaderboardShape" name="test_rank_is_1_based_and_sorted_by_sales" time="0.068" /><testcase classname="tests.test_iteration5.TestC_InvalidMonth" name="test_bad_month_400[not-a-month]" time="0.065" /><testcase classname="tests.test_iteration5.TestC_InvalidMonth" name="test_bad_month_400[2025-13]" time="0.068" /><testcase classname="tests.test_iteration5.TestC_InvalidMonth" name="test_bad_month_400[abcd-01]" time="0.058" /><testcase classname="tests.test_iteration5.TestC_InvalidMonth" name="test_bad_month_400[2025/01]" time="0.068" /><testcase classname="tests.test_iteration5.TestC_InvalidMonth" name="test_bad_month_400[2025-1a]" time="0.084" /><testcase classname="tests.test_iteration5.TestD_EmptyMonth" name="test_old_month_returns_zeros" time="0.069" /><testcase classname="tests.test_iteration5.TestE_VoidedExcluded" name="test_setup_product_and_customer" time="0.464"><failure message="assert 403 == 200&#10; +  where 403 = &lt;Response [403]&gt;.status_code">self = &lt;test_iteration5.TestE_VoidedExcluded object at 0xf9170f490750&gt;
+
+    def test_setup_product_and_customer(self):
+        prods = requests.get(f"{API}/products", headers=H("owner")).json()
+        p = next((x for x in prods if x["name"] == "TEST_IT5_P"), None)
+        if not p:
+            r = requests.post(f"{API}/products", headers=H("owner"),
+                              json={"name": "TEST_IT5_P", "cost_price": 1,
+                                    "sale_price": 20, "stock": 0, "min_stock": 1})
+            assert r.status_code == 200, r.text
+            p = r.json()
+        S["pid"] = p["id"]
+        # top-up warehouse
+        requests.post(f"{API}/purchases", headers=H("owner"),
+                      json={"product_id": p["id"], "quantity": 100, "unit_cost": 1})
+        # deliver 20 to the agent so they have inventory
+        d = requests.post(f"{API}/deliveries", headers=H("owner"),
+                          json={"distributor_id": "user_test_agent",
+                                "items": [{"product_id": p["id"], "quantity": 20}]})
+        did = d.json()["id"]
+        requests.post(f"{API}/deliveries/{did}/confirm", headers=H("agent"))
+        custs = requests.get(f"{API}/customers", headers=H("owner")).json()
+        c = next((x for x in custs if x["name"] == "TEST_IT5_C"), None)
+        if not c:
+            r = requests.post(f"{API}/customers", headers=H("owner"),
+                              json={"name": "TEST_IT5_C", "phone": "555"})
+&gt;           assert r.status_code == 200
+E           assert 403 == 200
+E            +  where 403 = &lt;Response [403]&gt;.status_code
+
+tests/test_iteration5.py:150: AssertionError</failure></testcase><testcase classname="tests.test_iteration5.TestE_VoidedExcluded" name="test_void_removes_from_leaderboard" time="0.121"><failure message="KeyError: 'cid'">self = &lt;test_iteration5.TestE_VoidedExcluded object at 0xf9170f490d10&gt;
+
+    def test_void_removes_from_leaderboard(self):
+        before = requests.get(f"{API}/stats/leaderboard", headers=H("owner")).json()
+        a_before = next(a for a in before["agents"] if a["user_id"] == "user_test_agent")
+    
+        # Create a sale (price 20, qty 2 -&gt; total 40)
+        r = requests.post(f"{API}/sales", headers=H("agent"),
+&gt;                         json={"customer_id": S["cid"],
+                                               ^^^^^^^^
+                                "items": [{"product_id": S["pid"], "quantity": 2, "price": 20}],
+                                "paid_amount": 0})
+E       KeyError: 'cid'
+
+tests/test_iteration5.py:160: KeyError</failure></testcase><testcase classname="tests.test_iteration6.TestA_RemindedSetup" name="test_create_or_fetch_customer" time="0.143"><failure message="AssertionError: {&quot;detail&quot;:&quot;ليس لديك صلاحية&quot;}&#10;assert 403 == 200&#10; +  where 403 = &lt;Response [403]&gt;.status_code">self = &lt;test_iteration6.TestA_RemindedSetup object at 0xf9170f492a10&gt;
+
+    def test_create_or_fetch_customer(self):
+        custs = requests.get(f"{API}/customers", headers=H("owner")).json()
+        c = next((x for x in custs if x["name"] == "TEST_IT6_REMIND_C"), None)
+        if not c:
+            r = requests.post(f"{API}/customers", headers=H("owner"),
+                              json={"name": "TEST_IT6_REMIND_C", "phone": "9647700000011"})
+&gt;           assert r.status_code == 200, r.text
+E           AssertionError: {"detail":"ليس لديك صلاحية"}
+E           assert 403 == 200
+E            +  where 403 = &lt;Response [403]&gt;.status_code
+
+tests/test_iteration6.py:36: AssertionError</failure></testcase><testcase classname="tests.test_iteration6.TestB_RemindedAccess" name="test_owner_can_remind" time="0.000"><failure message="KeyError: 'cid'">self = &lt;test_iteration6.TestB_RemindedAccess object at 0xf9170f647690&gt;
+
+    def test_owner_can_remind(self):
+&gt;       r = requests.post(f"{API}/customers/{S['cid']}/reminded", headers=H("owner"))
+                                             ^^^^^^^^
+E       KeyError: 'cid'
+
+tests/test_iteration6.py:46: KeyError</failure></testcase><testcase classname="tests.test_iteration6.TestB_RemindedAccess" name="test_accountant_can_remind" time="0.000"><failure message="KeyError: 'cid'">self = &lt;test_iteration6.TestB_RemindedAccess object at 0xf9170f490510&gt;
+
+    def test_accountant_can_remind(self):
+&gt;       r = requests.post(f"{API}/customers/{S['cid']}/reminded", headers=H("acct"))
+                                             ^^^^^^^^
+E       KeyError: 'cid'
+
+tests/test_iteration6.py:51: KeyError</failure></testcase><testcase classname="tests.test_iteration6.TestB_RemindedAccess" name="test_field_agent_can_remind" time="0.000"><failure message="KeyError: 'cid'">self = &lt;test_iteration6.TestB_RemindedAccess object at 0xf9170f492fd0&gt;
+
+    def test_field_agent_can_remind(self):
+        # Spec: "any org role"
+&gt;       r = requests.post(f"{API}/customers/{S['cid']}/reminded", headers=H("agent"))
+                                             ^^^^^^^^
+E       KeyError: 'cid'
+
+tests/test_iteration6.py:56: KeyError</failure></testcase><testcase classname="tests.test_iteration6.TestC_RemindedPersistence" name="test_last_reminder_at_set" time="0.062"><failure message="KeyError: 'cid'">self = &lt;test_iteration6.TestC_RemindedPersistence object at 0xf9170f493450&gt;
+
+    def test_last_reminder_at_set(self):
+        before = requests.get(f"{API}/customers", headers=H("owner")).json()
+&gt;       bc = next(x for x in before if x["id"] == S["cid"])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_iteration6.py:65: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = &lt;list_iterator object at 0xf9170f49a080&gt;
+
+&gt;   bc = next(x for x in before if x["id"] == S["cid"])
+                                              ^^^^^^^^
+E   KeyError: 'cid'
+
+tests/test_iteration6.py:65: KeyError</failure></testcase><testcase classname="tests.test_iteration6.TestD_RemindedErrors" name="test_unknown_customer_returns_404" time="0.083" /><testcase classname="tests.test_iteration6.TestD_RemindedErrors" name="test_bad_token_401" time="0.000"><failure message="KeyError: 'cid'">self = &lt;test_iteration6.TestD_RemindedErrors object at 0xf9170f493d90&gt;
+
+    def test_bad_token_401(self):
+&gt;       r = requests.post(f"{API}/customers/{S['cid']}/reminded",
+                                             ^^^^^^^^
+                          headers={"Authorization": "Bearer invalid"})
+E       KeyError: 'cid'
+
+tests/test_iteration6.py:90: KeyError</failure></testcase><testcase classname="tests.test_iteration6.TestD_RemindedErrors" name="test_new_user_without_org_forbidden" time="0.000"><failure message="KeyError: 'cid'">self = &lt;test_iteration6.TestD_RemindedErrors object at 0xf9170f49c350&gt;
+
+    def test_new_user_without_org_forbidden(self):
+        # ANY_ORG dep requires org membership
+&gt;       r = requests.post(f"{API}/customers/{S['cid']}/reminded", headers=H("new"))
+                                             ^^^^^^^^
+E       KeyError: 'cid'
+
+tests/test_iteration6.py:96: KeyError</failure></testcase><testcase classname="tests.test_iteration6.TestE_RemindedTenantIsolation" name="test_other_org_customer_returns_404" time="0.086" /></testsuite></testsuites>

@@ -52,8 +52,9 @@ class TestA_Setup:
         custs = requests.get(f"{API}/customers", headers=H("owner")).json()
         c = next((x for x in custs if x["name"] == "TEST_IT4_C"), None)
         if not c:
-            r = requests.post(f"{API}/customers", headers=H("owner"),
-                              json={"name": "TEST_IT4_C", "phone": "999"})
+            r = requests.post(f"{API}/customers", headers=H("agent"),
+                              json={"name": "TEST_IT4_C", "phone": "9647700000999",
+                                    "address": "بغداد", "lat": 33.31, "lng": 44.36})
             assert r.status_code == 200, r.text
             c = r.json()
         S["cid"] = c["id"]

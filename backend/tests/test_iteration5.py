@@ -145,8 +145,9 @@ class TestE_VoidedExcluded:
         custs = requests.get(f"{API}/customers", headers=H("owner")).json()
         c = next((x for x in custs if x["name"] == "TEST_IT5_C"), None)
         if not c:
-            r = requests.post(f"{API}/customers", headers=H("owner"),
-                              json={"name": "TEST_IT5_C", "phone": "555"})
+            r = requests.post(f"{API}/customers", headers=H("agent"),
+                              json={"name": "TEST_IT5_C", "phone": "9647700000555",
+                                    "address": "بغداد", "lat": 33.31, "lng": 44.36})
             assert r.status_code == 200
             c = r.json()
         S["cid"] = c["id"]

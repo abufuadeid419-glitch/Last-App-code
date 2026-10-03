@@ -7,6 +7,7 @@ import { AccountButton } from "@/src/components/AccountButton";
 import { LocationCard } from "@/src/components/LocationCard";
 import { AlertsCard } from "@/src/components/AlertsCard";
 import { Leaderboard } from "@/src/components/Leaderboard";
+import { StaleDebtorsCard } from "@/src/components/StaleDebtors";
 import { MyRoute } from "@/src/components/MyRoute";
 import { PendingDeliveries } from "@/src/components/PendingDeliveries";
 import { AgentStock } from "@/src/components/StockRequests";
@@ -58,6 +59,7 @@ export default function Overview() {
 
             {isAgent && <PendingDeliveries />}
             {!isAgent && <AlertsCard />}
+            {!isAgent && <StaleDebtorsCard />}
             {isAgent && <MyRoute />}
             {isAgent && <AgentStock />}
 

@@ -252,29 +252,35 @@ class TestIdempotency:
     def _setup(self):
         # Need an agent with inventory for a product + a customer
         prods = requests.get(f"{API}/products", headers=H("owner")).json()
-        pid = next((p["id"] for p in prods if p["stock"] >= 0 and p["sale_price"] > 0), None)
-        if not pid:
+        p = next((p for p in prods if p["name"] == "TEST_IDEM_P"), None)
+        if not p:
             r = requests.post(f"{API}/products", headers=H("owner"),
                              json={"name": "TEST_IDEM_P", "cost_price": 2, "sale_price": 10, "stock": 0, "min_stock": 0})
-            pid = r.json()["id"]
-            requests.post(f"{API}/purchases", headers=H("owner"),
-                         json={"product_id": pid, "quantity": 50, "unit_cost": 2})
-        # ensure agent inventory
-        requests.post(f"{API}/deliveries", headers=H("owner"),
+            p = r.json()
+        pid = p["id"]
+        # Always top up warehouse so delivery can succeed
+        requests.post(f"{API}/purchases", headers=H("owner"),
+                     json={"product_id": pid, "quantity": 50, "unit_cost": 2})
+        # ensure agent inventory (confirm the delivery so stock lands)
+        d = requests.post(f"{API}/deliveries", headers=H("owner"),
                      json={"distributor_id": "user_test_agent", "items": [{"product_id": pid, "quantity": 20}]})
+        if d.status_code == 200:
+            requests.post(f"{API}/deliveries/{d.json()['id']}/confirm", headers=H("agent"))
         STATE["idem_pid"] = pid
-        # customer
-        r = requests.post(f"{API}/customers", headers=H("owner"),
-                         json={"name": "TEST_IDEM_CUST"})
+        # customer (new rules: distributors add customers; all fields incl GPS mandatory)
+        r = requests.post(f"{API}/customers", headers=H("agent"),
+                         json={"name": "TEST_IDEM_CUST", "phone": "9647700000001",
+                               "address": "بغداد", "lat": 33.31, "lng": 44.36})
         STATE["idem_cid"] = r.json()["id"]
 
     def test_customer_idempotent_create(self):
         cid = "test-idem-cust-fixed-id"
-        payload = {"id": cid, "name": "TEST_IDEM_FIXED", "phone": "123"}
-        r1 = requests.post(f"{API}/customers", headers=H("owner"), json=payload)
+        payload = {"id": cid, "name": "TEST_IDEM_FIXED", "phone": "9647001234567",
+                   "address": "بغداد", "lat": 33.31, "lng": 44.36}
+        r1 = requests.post(f"{API}/customers", headers=H("agent"), json=payload)
         assert r1.status_code == 200
         assert r1.json()["id"] == cid
-        r2 = requests.post(f"{API}/customers", headers=H("owner"), json=payload)
+        r2 = requests.post(f"{API}/customers", headers=H("agent"), json=payload)
         assert r2.status_code == 200
         assert r2.json()["id"] == cid
         STATE["idem_fixed_cid"] = cid

@@ -6,7 +6,7 @@ import { useAuth } from "@/src/auth";
 import { AccountButton } from "@/src/components/AccountButton";
 import { DateField } from "@/src/components/DateField";
 import { InvoiceActions } from "@/src/components/InvoiceActions";
-import { ReceiptSheet } from "@/src/components/ReceiptSheet";
+import { VoucherKind, VoucherSheet } from "@/src/components/VoucherSheet";
 import { SyncBanner } from "@/src/components/SyncBanner";
 import { useApi, useBottomChrome, useMutate } from "@/src/hooks";
 import { offlineReturn } from "@/src/offlineActions";
@@ -14,7 +14,7 @@ import { usePriceResolver } from "@/src/pricing";
 import { fonts, radius, spacing, useTheme } from "@/src/theme";
 import { Badge, Btn, Card, Empty, ErrorBox, Field, Header, IconBtn, Loading, Row, Segments, Select, Sheet, T, useToast } from "@/src/ui";
 
-type Tab = "sales" | "returns" | "collections" | "purchases" | "purchase_returns";
+type Tab = "sales" | "returns" | "collections" | "payments" | "purchases" | "purchase_returns";
 type Range = "all" | "today" | "week" | "month" | "custom";
 const since = (r: Range) => {
   const d = new Date();
@@ -33,12 +33,12 @@ const dayTs = (s: string, end = false) => {
   return d.getTime();
 };
 const searchText = (x: any) =>
-  [x.customer_name, x.invoice_no, x.return_no, x.receipt_no, x.product_name, x.supplier, x.distributor_name, x.collector_name, ...(x.items ?? []).map((i: any) => i.product_name)]
+  [x.customer_name, x.invoice_no, x.return_no, x.receipt_no, x.voucher_no, x.product_name, x.supplier, x.distributor_name, x.collector_name, ...(x.items ?? []).map((i: any) => i.product_name)]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
 
-function InvoiceSheet({ doc, onClose }: { doc: any | null; onClose: () => void }) {
+export function InvoiceSheet({ doc, onClose }: { doc: any | null; onClose: () => void }) {
   const { user } = useAuth();
   const [reason, setReason] = useState("");
   const voidM = useMutate<any>("POST", (b) => `/sales/${b.id}/void`, "تم إلغاء الفاتورة", onClose);
@@ -85,7 +85,7 @@ function InvoiceSheet({ doc, onClose }: { doc: any | null; onClose: () => void }
   );
 }
 
-function ReturnSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+export function ReturnSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const toast = useToast();
   const { user } = useAuth();
   const customers = useApi<any[]>("/customers", visible);
@@ -128,12 +128,12 @@ export default function Sales({ tabs = ["sales", "returns"], title = "الفوا
   const bottom = useBottomChrome();
   const [tab, setTab] = useState<Tab>(tabs[0]);
   const [doc, setDoc] = useState<any>(null);
-  const [receipt, setReceipt] = useState<any>(null);
+  const [receipt, setReceipt] = useState<{ kind: VoucherKind; doc: any } | null>(null);
   const [ret, setRet] = useState(false);
   const isAgent = user?.employee_type === "FIELD_AGENT";
-  const paths: Record<Tab, string> = { sales: "/sales", returns: "/sales-returns", collections: "/collections", purchases: "/purchases", purchase_returns: "/purchase-returns" };
+  const paths: Record<Tab, string> = { sales: "/sales", returns: "/sales-returns", collections: "/collections", payments: "/payment-vouchers", purchases: "/purchases", purchase_returns: "/purchase-returns" };
   const q = useApi<any[]>(paths[tab]);
-  const labels: Record<Tab, string> = { sales: "المبيعات", returns: "المرتجعات", collections: "التحصيلات", purchases: "المشتريات", purchase_returns: "مرتجع المشتريات" };
+  const labels: Record<Tab, string> = { sales: "المبيعات", returns: "المرتجعات", collections: "التحصيلات", payments: "سندات الصرف", purchases: "المشتريات", purchase_returns: "مرتجع المشتريات" };
   const [range, setRange] = useState<Range>("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -201,8 +201,15 @@ export default function Sales({ tabs = ["sales", "returns"], title = "الفوا
           renderItem={({ item }) =>
             tab === "purchases" || tab === "purchase_returns" ? (
               <Row testID={`${tab}-row-${item.id}`} icon={tab === "purchases" ? "download-outline" : "arrow-undo-outline"} title={`${item.product_name} × ${money(item.quantity)}`} subtitle={`${item.supplier || "بدون مورد"} · ${fmtDate(item.created_at)}${item.reason ? " · " + item.reason : ""}`} right={<T v="label">{money(item.total)}</T>} />
-            ) : tab === "collections" ? (
-              <Row testID={`collection-row-${item.id}`} icon="cash-outline" title={`${item.receipt_no} · ${item.customer_name}`} subtitle={`${item.collector_name ?? ""} · ${fmtDate(item.created_at)}`} onPress={() => (item.pending ? null : setReceipt(item))} right={<T v="label" color="success">{money(item.amount)}</T>} />
+            ) : tab === "collections" || tab === "payments" ? (
+              <Row
+                testID={`${tab === "collections" ? "collection" : "payment"}-row-${item.id}`}
+                icon={tab === "collections" ? "cash-outline" : "arrow-up-circle-outline"}
+                title={`${item.receipt_no ?? item.voucher_no} · ${item.customer_name}`}
+                subtitle={`${item.collector_name ?? item.distributor_name ?? ""} · ${fmtDate(item.created_at)}`}
+                onPress={() => (item.pending ? null : setReceipt({ kind: tab === "collections" ? "collection" : "payment", doc: item }))}
+                right={<T v="label" color={tab === "collections" ? "success" : "warning"}>{money(item.amount)}</T>}
+              />
             ) : (
               <Row
                 testID={`${tab}-row-${item.id}`}
@@ -224,7 +231,7 @@ export default function Sales({ tabs = ["sales", "returns"], title = "الفوا
         />
       )}
       <InvoiceSheet doc={doc} onClose={() => setDoc(null)} />
-      <ReceiptSheet col={receipt} onClose={() => setReceipt(null)} />
+      <VoucherSheet kind={receipt?.kind ?? "collection"} doc={receipt?.doc ?? null} onClose={() => setReceipt(null)} />
       {isAgent && <ReturnSheet visible={ret} onClose={() => setRet(false)} />}
     </View>
   );

@@ -91,8 +91,9 @@ class TestB_CustomerTypes:
 # ------------- Customers with type_id / lat / lng -------------
 class TestC_CustomersTyped:
     def test_create_customer_with_type_and_geo(self):
-        r = requests.post(f"{API}/customers", headers=H("owner"),
-                          json={"name": "TEST_ITER3_CUST_TYPED", "phone": "100",
+        r = requests.post(f"{API}/customers", headers=H("agent"),
+                          json={"name": "TEST_ITER3_CUST_TYPED", "phone": "9647711111111",
+                                "address": "بغداد-أ",
                                 "type_id": STATE["type_id"], "lat": 33.3, "lng": 44.3})
         assert r.status_code == 200, r.text
         d = r.json()
@@ -101,11 +102,13 @@ class TestC_CustomersTyped:
         STATE["cust_typed"] = d["id"]
 
     def test_create_customer_without_type(self):
-        r = requests.post(f"{API}/customers", headers=H("owner"),
-                          json={"name": "TEST_ITER3_CUST_NO_LOC", "phone": "101"})
+        r = requests.post(f"{API}/customers", headers=H("agent"),
+                          json={"name": "TEST_ITER3_CUST_NO_LOC", "phone": "9647722222222",
+                                "address": "بغداد-ب", "lat": 33.31, "lng": 44.36})
         assert r.status_code == 200
         STATE["cust_untyped"] = r.json()["id"]
-        assert r.json().get("lat") is None
+        # lat/lng are now mandatory
+        assert r.json().get("lat") == 33.31
 
 
 # ------------- Sale honours type price and ignores client price -------------
@@ -127,13 +130,14 @@ class TestD_SalePriceLocking:
         assert r.json()["items"][0]["price"] == 15.0
 
     def test_sale_sets_customer_lat_lng_when_missing(self):
-        # cust_untyped had no lat; a sale sent lat/lng -> should be stored on customer
+        # New rules: lat/lng are mandatory at customer creation. Verify the sale
+        # does NOT overwrite an existing customer location (customer location is sticky).
         payload = {"customer_id": STATE["cust_untyped"], "lat": 55.5, "lng": 66.6,
                    "items": [{"product_id": STATE["pid"], "quantity": 1, "price": 1}], "paid_amount": 0}
         r = requests.post(f"{API}/sales", headers=H("agent"), json=payload)
         assert r.status_code == 200
         cust = next(c for c in requests.get(f"{API}/customers", headers=H("owner")).json() if c["id"] == STATE["cust_untyped"])
-        assert cust["lat"] == 55.5 and cust["lng"] == 66.6
+        assert cust["lat"] == 33.31 and cust["lng"] == 44.36, "existing customer location should be sticky"
 
     def test_sales_return_uses_type_price(self):
         payload = {"customer_id": STATE["cust_typed"],

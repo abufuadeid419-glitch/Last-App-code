@@ -12,6 +12,7 @@ import { queryClient } from "@/src/query-client";
 import { useTheme } from "@/src/theme";
 import { ToastProvider } from "@/src/ui";
 import { UpdateGate } from "@/src/components/UpdateGate";
+import { BtPrintHost } from "@/src/components/BtPrintHost";
 
 // Disable logbox errors etc so that users can see the app
 // and agent works as expected.
@@ -73,6 +74,7 @@ export default function RootLayout() {
               <UpdateGate>
                 <Gate />
               </UpdateGate>
+              <BtPrintHost />
             </ToastProvider>
           </AuthProvider>
         </KeyboardProvider>

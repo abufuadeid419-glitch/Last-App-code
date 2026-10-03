@@ -31,8 +31,9 @@ class TestA_RemindedSetup:
         custs = requests.get(f"{API}/customers", headers=H("owner")).json()
         c = next((x for x in custs if x["name"] == "TEST_IT6_REMIND_C"), None)
         if not c:
-            r = requests.post(f"{API}/customers", headers=H("owner"),
-                              json={"name": "TEST_IT6_REMIND_C", "phone": "9647700000011"})
+            r = requests.post(f"{API}/customers", headers=H("agent"),
+                              json={"name": "TEST_IT6_REMIND_C", "phone": "9647700000011",
+                                    "address": "بغداد", "lat": 33.31, "lng": 44.36})
             assert r.status_code == 200, r.text
             c = r.json()
         assert c and c.get("id")

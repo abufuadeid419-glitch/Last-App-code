@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import asyncio
 import logging
 import uuid
 import secrets
@@ -80,13 +81,24 @@ class ProductIn(BaseModel):
 
 class CustomerIn(BaseModel):
     id: Optional[str] = None
-    name: str
+    name: str = ""
     phone: str = ""
     address: str = ""
     location: str = ""
-    type_id: Optional[str] = None
+    type_id: Optional[str] = None  # null = regular price list (an explicit choice in the form)
     lat: Optional[float] = None
     lng: Optional[float] = None
+
+
+def validate_customer(body: CustomerIn):
+    """All customer fields are mandatory: name, phone, address and GPS location."""
+    missing = [label for label, v in (("اسم العميل", body.name), ("الهاتف", body.phone), ("العنوان", body.address)) if not (v or "").strip()]
+    if body.lat is None or body.lng is None:
+        missing.append("موقع العميل (GPS)")
+    if missing:
+        raise HTTPException(400, "جميع بيانات العميل إلزامية. الحقول الناقصة: " + "، ".join(missing))
+    if len("".join(ch for ch in body.phone if ch.isdigit())) < 7:
+        raise HTTPException(400, "رقم الهاتف غير صالح")
 
 
 class InviteIn(BaseModel):
@@ -143,6 +155,22 @@ class CollectionIn(GeoMixin):
 class ReturnIn(GeoMixin):
     customer_id: str
     items: List[LineIn]
+    reason: str = ""
+
+
+class PaymentVoucherIn(GeoMixin):
+    customer_id: str
+    amount: float = Field(gt=0)
+    notes: str = ""
+
+
+class WarehouseReturnIn(BaseModel):
+    id: Optional[str] = None
+    items: List[DeliveryLine]
+    notes: str = ""
+
+
+class RejectIn(BaseModel):
     reason: str = ""
 
 
@@ -382,41 +410,65 @@ async def delete_product(pid: str, user=Depends(OWNER)):
 
 
 # ---------------- Customers ----------------
+def is_agent(user: dict) -> bool:
+    return user.get("employee_type") == "FIELD_AGENT"
+
+
+async def org_customer(user: dict, cid: str) -> dict:
+    """Customer of the user's org; distributors may only access their own customers."""
+    c = await db.customers.find_one({"id": cid, "org_id": user["org_id"]}, NO_ID)
+    if not c or (is_agent(user) and c.get("distributor_id") != user["user_id"]):
+        raise HTTPException(404, "العميل غير موجود")
+    return c
+
+
+async def check_customer_type(user: dict, type_id: Optional[str]):
+    if type_id and not await db.customer_types.find_one({"id": type_id, "org_id": user["org_id"]}):
+        raise HTTPException(400, "فئة العميل غير موجودة")
+
+
 @api.get("/customers")
 async def list_customers(user=Depends(ANY_ORG)):
-    return await db.customers.find({"org_id": user["org_id"]}, NO_ID).sort("name", 1).to_list(2000)
+    q = {"org_id": user["org_id"]}
+    if is_agent(user):
+        q["distributor_id"] = user["user_id"]
+    custs = await db.customers.find(q, NO_ID).sort("name", 1).to_list(5000)
+    if not is_agent(user):
+        users = await db.users.find({"org_id": user["org_id"]}, {"_id": 0, "user_id": 1, "name": 1, "email": 1}).to_list(500)
+        names = {u["user_id"]: u.get("name") or u["email"] for u in users}
+        for c in custs:
+            c["distributor_name"] = names.get(c.get("distributor_id"), c.get("distributor_name", ""))
+    return custs
 
 
 @api.post("/customers")
-async def create_customer(body: CustomerIn, user=Depends(ANY_ORG)):
+async def create_customer(body: CustomerIn, user=Depends(AGENT)):
+    """Only distributors add customers; each customer belongs to the distributor who added it."""
     if body.id:
         ex = await db.customers.find_one({"id": body.id, "org_id": user["org_id"]}, NO_ID)
         if ex:
             return ex
+    validate_customer(body)
+    await check_customer_type(user, body.type_id)
     doc = {"id": body.id or new_id(), "org_id": user["org_id"], **body.model_dump(exclude={"id"}), "balance": 0.0,
-           "created_by": user["user_id"], "created_at": iso()}
+           "distributor_id": user["user_id"], "distributor_name": user.get("name"), "created_by": user["user_id"], "created_at": iso()}
     await db.customers.insert_one(dict(doc))
     return doc
 
 
 @api.put("/customers/{cid}")
-async def update_customer(cid: str, body: CustomerIn, user=Depends(STAFF)):
-    await db.customers.update_one({"id": cid, "org_id": user["org_id"]}, {"$set": body.model_dump(exclude={"id"})})
+async def update_customer(cid: str, body: CustomerIn, user=Depends(AGENT)):
+    await org_customer(user, cid)
+    validate_customer(body)
+    await check_customer_type(user, body.type_id)
+    await db.customers.update_one({"id": cid}, {"$set": body.model_dump(exclude={"id"})})
     return await db.customers.find_one({"id": cid}, NO_ID)
-
-
-@api.delete("/customers/{cid}")
-async def delete_customer(cid: str, user=Depends(OWNER)):
-    await db.customers.delete_one({"id": cid, "org_id": user["org_id"]})
-    return {"ok": True}
 
 
 @api.get("/customers/{cid}/statement")
 async def customer_statement(cid: str, user=Depends(ANY_ORG)):
     q = {"org_id": user["org_id"], "customer_id": cid}
-    cust = await db.customers.find_one({"id": cid, "org_id": user["org_id"]}, NO_ID)
-    if not cust:
-        raise HTTPException(404, "غير موجود")
+    cust = await org_customer(user, cid)
     rows = []
     for s in await db.sales.find(q, NO_ID).to_list(1000):
         rows.append({"type": "SALE", "ref": s["invoice_no"], "debit": s["total"], "credit": s["paid_amount"], "date": s["created_at"]})
@@ -424,6 +476,8 @@ async def customer_statement(cid: str, user=Depends(ANY_ORG)):
         rows.append({"type": "COLLECTION", "ref": c["receipt_no"], "debit": 0, "credit": c["amount"], "date": c["created_at"]})
     for r in await db.sales_returns.find(q, NO_ID).to_list(1000):
         rows.append({"type": "RETURN", "ref": r["return_no"], "debit": 0, "credit": r["total"], "date": r["created_at"]})
+    for p in await db.payment_vouchers.find(q, NO_ID).to_list(1000):
+        rows.append({"type": "PAYMENT", "ref": p["voucher_no"], "debit": p["amount"], "credit": 0, "date": p["created_at"]})
     rows.sort(key=lambda x: x["date"])
     return {"customer": cust, "rows": rows}
 
@@ -431,11 +485,154 @@ async def customer_statement(cid: str, user=Depends(ANY_ORG)):
 @api.post("/customers/{cid}/reminded")
 async def mark_customer_reminded(cid: str, user=Depends(ANY_ORG)):
     """Records that a WhatsApp debt reminder was sent to the customer."""
-    r = await db.customers.update_one({"id": cid, "org_id": user["org_id"]},
-                                      {"$set": {"last_reminder_at": iso(), "last_reminder_by": user.get("name")}})
-    if not r.matched_count:
-        raise HTTPException(404, "غير موجود")
+    await org_customer(user, cid)
+    await db.customers.update_one({"id": cid}, {"$set": {"last_reminder_at": iso(), "last_reminder_by": user.get("name")}})
     return {"ok": True}
+
+
+# ---------------- Weekly debt reminders ----------------
+STALE_DAYS = 7
+
+
+async def stale_debtors(org_id: str) -> List[dict]:
+    """Debtors not contacted (no WhatsApp reminder) in the last 7 days."""
+    cutoff = (now() - timedelta(days=STALE_DAYS)).isoformat()
+    return await db.customers.find(
+        {"org_id": org_id, "balance": {"$gt": 0}, "$or": [{"last_reminder_at": {"$exists": False}}, {"last_reminder_at": None}, {"last_reminder_at": {"$lt": cutoff}}]},
+        NO_ID).sort("balance", -1).to_list(2000)
+
+
+async def run_debt_digest(org_id: str) -> int:
+    stale = await stale_debtors(org_id)
+    await db.organizations.update_one({"id": org_id}, {"$set": {"last_debt_digest_at": iso()}})
+    if not stale:
+        return 0
+    accts = await db.users.find({"org_id": org_id, "employee_type": "ACCOUNTANT"}, {"_id": 0, "user_id": 1}).to_list(50)
+    names = "، ".join(c["name"] for c in stale[:5]) + (f" و{len(stale) - 5} آخرين" if len(stale) > 5 else "")
+    total = round(sum(c["balance"] for c in stale), 2)
+    await notify([a["user_id"] for a in accts] + await org_owner_ids(org_id), "debt_digest", "تذكير أسبوعي بالديون",
+                 f"{len(stale)} عميل مدين لم يتم التواصل معهم منذ {STALE_DAYS} أيام (إجمالي {total}): {names}")
+    return len(stale)
+
+
+@api.get("/debts/stale")
+async def list_stale_debtors(user=Depends(STAFF)):
+    return await stale_debtors(user["org_id"])
+
+
+@api.post("/debts/digest")
+async def force_debt_digest(user=Depends(STAFF)):
+    return {"count": await run_debt_digest(user["org_id"])}
+
+
+async def debt_digest_loop():
+    """Hourly check; each active org gets the digest once every 7 days."""
+    while True:
+        try:
+            cutoff = (now() - timedelta(days=STALE_DAYS)).isoformat()
+            orgs = await db.organizations.find({"status": "ACTIVE", "$or": [{"last_debt_digest_at": {"$exists": False}}, {"last_debt_digest_at": {"$lt": cutoff}}]},
+                                               {"_id": 0, "id": 1}).to_list(1000)
+            for o in orgs:
+                await run_debt_digest(o["id"])
+        except Exception as e:
+            logger.error(f"debt digest failed: {e}")
+        await asyncio.sleep(3600)
+
+
+# ---------------- Payment vouchers (refunds to customers) ----------------
+@api.get("/payment-vouchers")
+async def list_payment_vouchers(user=Depends(ANY_ORG)):
+    q = {"org_id": user["org_id"]}
+    if is_agent(user):
+        q["distributor_id"] = user["user_id"]
+    return await db.payment_vouchers.find(q, NO_ID).sort("created_at", -1).to_list(1000)
+
+
+@api.post("/payment-vouchers")
+async def create_payment_voucher(body: PaymentVoucherIn, user=Depends(AGENT)):
+    """Cash refund paid by the distributor to a customer with a credit balance."""
+    if body.id:
+        ex = await db.payment_vouchers.find_one({"id": body.id, "org_id": user["org_id"]}, NO_ID)
+        if ex:
+            return ex
+    cust = await org_customer(user, body.customer_id)
+    credit = -cust["balance"]
+    if body.amount > credit + 0.001:
+        raise HTTPException(400, f"المبلغ أكبر من الرصيد الدائن للعميل ({round(max(credit, 0.0), 2) + 0.0})")
+    await db.customers.update_one({"id": cust["id"]}, {"$inc": {"balance": body.amount}})
+    doc = {"id": body.id or new_id(), **geo(body), "org_id": user["org_id"], "voucher_no": await next_no(user["org_id"], "pay", "PAY"),
+           "customer_id": cust["id"], "customer_name": cust["name"], "amount": body.amount, "notes": body.notes,
+           "distributor_id": user["user_id"], "distributor_name": user.get("name"), "created_at": iso()}
+    await db.payment_vouchers.insert_one(dict(doc))
+    return doc
+
+
+# ---------------- Distributor returns to the main warehouse ----------------
+@api.get("/warehouse-returns")
+async def list_warehouse_returns(user=Depends(ANY_ORG)):
+    q = {"org_id": user["org_id"]}
+    if is_agent(user):
+        q["distributor_id"] = user["user_id"]
+    return await db.warehouse_returns.find(q, NO_ID).sort("created_at", -1).to_list(500)
+
+
+@api.post("/warehouse-returns")
+async def create_warehouse_return(body: WarehouseReturnIn, user=Depends(AGENT)):
+    """Stock leaves the distributor now; the warehouse receives it when the owner confirms."""
+    if body.id:
+        ex = await db.warehouse_returns.find_one({"id": body.id, "org_id": user["org_id"]}, NO_ID)
+        if ex:
+            return ex
+    if not body.items:
+        raise HTTPException(400, "أضف صنفاً واحداً على الأقل")
+    items = []
+    for it in body.items:
+        inv = await db.distributor_inventory.find_one({"distributor_id": user["user_id"], "product_id": it.product_id}, NO_ID)
+        if not inv or inv["quantity"] < it.quantity:
+            raise HTTPException(400, f"الكمية غير متوفرة لديك: {inv['product_name'] if inv else ''}")
+        items.append({"product_id": it.product_id, "product_name": inv["product_name"], "quantity": it.quantity})
+    for it in items:
+        await db.distributor_inventory.update_one({"distributor_id": user["user_id"], "product_id": it["product_id"]}, {"$inc": {"quantity": -it["quantity"]}})
+        await log_movement(user["org_id"], it["product_id"], it["product_name"], "DIST_RETURN_OUT", -it["quantity"], user, "AGENT")
+    doc = {"id": body.id or new_id(), "org_id": user["org_id"], "return_no": await next_no(user["org_id"], "wret", "WRT"),
+           "distributor_id": user["user_id"], "distributor_name": user.get("name"), "items": items, "notes": body.notes,
+           "status": "PENDING", "created_at": iso()}
+    await db.warehouse_returns.insert_one(dict(doc))
+    await notify(await org_owner_ids(user["org_id"]), "warehouse_return", "مرتجع موزع بانتظار الاستلام",
+                 f"{user.get('name')} أرجع {len(items)} صنف إلى المستودع")
+    return doc
+
+
+async def _pending_wreturn(rid: str, user: dict) -> dict:
+    r = await db.warehouse_returns.find_one({"id": rid, "org_id": user["org_id"], "status": "PENDING"}, NO_ID)
+    if not r:
+        raise HTTPException(404, "المرتجع غير موجود أو تمت معالجته")
+    return r
+
+
+@api.post("/warehouse-returns/{rid}/accept")
+async def accept_warehouse_return(rid: str, user=Depends(OWNER)):
+    r = await _pending_wreturn(rid, user)
+    for it in r["items"]:
+        await db.products.update_one({"id": it["product_id"], "org_id": user["org_id"]}, {"$inc": {"stock": it["quantity"]}})
+        await log_movement(user["org_id"], it["product_id"], it["product_name"], "DIST_RETURN", it["quantity"], user)
+    await db.warehouse_returns.update_one({"id": rid}, {"$set": {"status": "ACCEPTED", "handled_at": iso(), "handled_by": user.get("name")}})
+    await notify([r["distributor_id"]], "warehouse_return_accepted", "تم استلام المرتجع", f"تم استلام المرتجع {r['return_no']} في المستودع")
+    return await db.warehouse_returns.find_one({"id": rid}, NO_ID)
+
+
+@api.post("/warehouse-returns/{rid}/reject")
+async def reject_warehouse_return(rid: str, body: RejectIn, user=Depends(OWNER)):
+    r = await _pending_wreturn(rid, user)
+    for it in r["items"]:
+        await db.distributor_inventory.update_one(
+            {"distributor_id": r["distributor_id"], "product_id": it["product_id"]},
+            {"$inc": {"quantity": it["quantity"]}, "$set": {"org_id": user["org_id"], "product_name": it["product_name"]}}, upsert=True)
+        await log_movement(user["org_id"], it["product_id"], it["product_name"], "DIST_RETURN_REJECTED", it["quantity"], user, "AGENT")
+    await db.warehouse_returns.update_one({"id": rid}, {"$set": {"status": "REJECTED", "reject_reason": body.reason, "handled_at": iso(), "handled_by": user.get("name")}})
+    await notify([r["distributor_id"]], "warehouse_return_rejected", "تم رفض المرتجع",
+                 f"رُفض المرتجع {r['return_no']} وأعيدت الكميات إلى مخزونك{(' · ' + body.reason) if body.reason else ''}")
+    return await db.warehouse_returns.find_one({"id": rid}, NO_ID)
 
 
 # ---------------- Employees ----------------
@@ -566,9 +763,7 @@ async def create_sale(body: SaleIn, user=Depends(AGENT)):
         ex = await db.sales.find_one({"id": body.id, "org_id": user["org_id"]}, NO_ID)
         if ex:
             return ex
-    cust = await db.customers.find_one({"id": body.customer_id, "org_id": user["org_id"]}, NO_ID)
-    if not cust:
-        raise HTTPException(404, "العميل غير موجود")
+    cust = await org_customer(user, body.customer_id)
     if not body.items:
         raise HTTPException(400, "أضف منتجاً واحداً على الأقل")
     items, total = [], 0.0
@@ -616,9 +811,7 @@ async def list_collections(user=Depends(ANY_ORG)):
 
 @api.post("/collections")
 async def create_collection(body: CollectionIn, user=Depends(ANY_ORG)):
-    cust = await db.customers.find_one({"id": body.customer_id, "org_id": user["org_id"]}, NO_ID)
-    if not cust:
-        raise HTTPException(404, "العميل غير موجود")
+    cust = await org_customer(user, body.customer_id)
     if body.id:
         ex = await db.collections.find_one({"id": body.id, "org_id": user["org_id"]}, NO_ID)
         if ex:
@@ -644,9 +837,7 @@ async def list_returns(user=Depends(ANY_ORG)):
 
 @api.post("/sales-returns")
 async def create_return(body: ReturnIn, user=Depends(AGENT)):
-    cust = await db.customers.find_one({"id": body.customer_id, "org_id": user["org_id"]}, NO_ID)
-    if not cust:
-        raise HTTPException(404, "العميل غير موجود")
+    cust = await org_customer(user, body.customer_id)
     if body.id:
         ex = await db.sales_returns.find_one({"id": body.id, "org_id": user["org_id"]}, NO_ID)
         if ex:
@@ -798,6 +989,7 @@ class OrgProfileIn(BaseModel):
     tax_no: str = ""
     cr_no: str = ""
     invoice_footer: str = ""
+    phone_country_code: str = ""  # e.g. 964; prefixed to local numbers for WhatsApp
 
 
 class LogoIn(BaseModel):
@@ -840,7 +1032,7 @@ class LocationIn(BaseModel):
     accuracy: Optional[float] = None
 
 
-PROFILE_FIELDS = ["name", "phone", "email", "address", "tax_no", "cr_no", "invoice_footer"]
+PROFILE_FIELDS = ["name", "phone", "email", "address", "tax_no", "cr_no", "invoice_footer", "phone_country_code"]
 
 
 @api.get("/org/profile")
@@ -854,6 +1046,7 @@ async def org_profile(user=Depends(ANY_ORG)):
 async def update_org_profile(body: OrgProfileIn, user=Depends(OWNER)):
     if not body.name.strip():
         raise HTTPException(400, "اسم المؤسسة مطلوب")
+    body.phone_country_code = "".join(ch for ch in body.phone_country_code if ch.isdigit())[:4]
     await db.organizations.update_one({"id": user["org_id"]}, {"$set": body.model_dump()})
     return await org_profile(user)
 
@@ -1076,6 +1269,24 @@ async def tracking_agents(user=Depends(STAFF)):
     return out
 
 
+@api.get("/tracking/agents/{uid}/trail")
+async def agent_trail(uid: str, date: Optional[str] = None, user=Depends(STAFF)):
+    """GPS points (chronological) and sale visits of one distributor for a day (YYYY-MM-DD, UTC)."""
+    d = date or now().date().isoformat()
+    try:
+        start = datetime.fromisoformat(d)
+    except ValueError:
+        raise HTTPException(400, "صيغة التاريخ غير صحيحة")
+    if not await db.users.find_one({"user_id": uid, "org_id": user["org_id"], "employee_type": "FIELD_AGENT"}):
+        raise HTTPException(404, "الموزع غير موجود")
+    rng = {"$gte": start.strftime("%Y-%m-%d"), "$lt": (start + timedelta(days=1)).strftime("%Y-%m-%d")}
+    points = await db.agent_locations.find({"org_id": user["org_id"], "user_id": uid, "at": rng},
+                                           {"_id": 0, "lat": 1, "lng": 1, "at": 1, "accuracy": 1}).sort("at", 1).to_list(5000)
+    visits = await db.sales.find({"org_id": user["org_id"], "distributor_id": uid, "created_at": rng, "lat": {"$ne": None}},
+                                 {"_id": 0, "invoice_no": 1, "customer_name": 1, "lat": 1, "lng": 1, "total": 1, "created_at": 1}).sort("created_at", 1).to_list(500)
+    return {"date": d, "points": points, "visits": visits}
+
+
 # ---------------- Customer types / price lists ----------------
 class CustomerTypeIn(BaseModel):
     name: str
@@ -1158,11 +1369,12 @@ def _dist(a, b):
     return 6371 * 2 * math.asin(math.sqrt(h))
 
 
-async def _build_stops(org_id: str, customer_ids: List[str], old: List[dict]) -> List[dict]:
+async def _build_stops(org_id: str, customer_ids: List[str], old: List[dict], distributor_id: str) -> List[dict]:
+    """Route stops may only use the distributor's own customers."""
     prev = {s["customer_id"]: s for s in old}
     stops = []
     for cid in dict.fromkeys(customer_ids):
-        c = await db.customers.find_one({"id": cid, "org_id": org_id}, NO_ID)
+        c = await db.customers.find_one({"id": cid, "org_id": org_id, "distributor_id": distributor_id}, NO_ID)
         if not c:
             continue
         p = prev.get(cid, {})
@@ -1202,7 +1414,7 @@ async def save_route(body: RouteIn, user=Depends(OWNER)):
     if not dist:
         raise HTTPException(404, "الموزع غير موجود")
     ex = await db.routes.find_one({"distributor_id": dist["user_id"], "date": body.date}, NO_ID)
-    stops = await _build_stops(user["org_id"], body.customer_ids, ex["stops"] if ex else [])
+    stops = await _build_stops(user["org_id"], body.customer_ids, ex["stops"] if ex else [], dist["user_id"])
     if ex:
         await db.routes.update_one({"id": ex["id"]}, {"$set": {"stops": stops}})
         return await db.routes.find_one({"id": ex["id"]}, NO_ID)
@@ -1223,7 +1435,7 @@ async def optimize_route(rid: str, body: OptimizeIn, user=Depends(ANY_ORG)):
     r = await _route_access(rid, user)
     if user.get("role") == "EMPLOYEE" and user.get("employee_type") != "FIELD_AGENT":
         raise HTTPException(403, "ليس لديك صلاحية")
-    stops = await _build_stops(user["org_id"], [s["customer_id"] for s in r["stops"]], r["stops"])
+    stops = await _build_stops(user["org_id"], [s["customer_id"] for s in r["stops"]], r["stops"], r["distributor_id"])
     done = [s for s in stops if s["status"] != "PENDING"]
     located = [s for s in stops if s["status"] == "PENDING" and s.get("lat") is not None]
     unlocated = [s for s in stops if s["status"] == "PENDING" and s.get("lat") is None]
@@ -1584,7 +1796,7 @@ async def cancel_deletion_request(rid: str, user=Depends(owner_any)):
 
 ORG_COLLECTIONS = ["products", "customers", "customer_types", "sales", "collections", "sales_returns", "purchases", "purchase_returns",
                    "deliveries", "distributor_inventory", "stock_movements", "routes", "stock_requests", "invitations", "counters",
-                   "agent_locations", "price_history", "upgrade_requests"]
+                   "agent_locations", "price_history", "upgrade_requests", "payment_vouchers", "warehouse_returns"]
 
 
 @api.patch("/dev/deletion-requests/{rid}")
@@ -1697,6 +1909,7 @@ async def startup():
         await run_in_threadpool(init_storage)
     except Exception as e:
         logger.error(f"storage init failed: {e}")
+    asyncio.create_task(debt_digest_loop())
 
 
 @app.on_event("shutdown")
