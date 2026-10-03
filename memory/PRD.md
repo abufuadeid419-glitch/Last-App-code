@@ -54,6 +54,13 @@ User choices: FastAPI + MongoDB backend, all roles (Developer, Owner, Accountant
 - The accountant now has a separate bottom tab for التحصيلات (app/acct/collections.tsx)
 - Segments row no longer shrinks when the screen content overflows (ui.tsx)
 
+## Iteration 6 (2026-06)
+- Tracker: tapping a distributor (Owner > الإدارة > تتبع GPS) opens a full-screen Google Map (AgentMapSheet). It uses the official embed with no API key: a WebView on native and an iframe on web. It has map/satellite/hybrid views, chips to jump to today's visits, and buttons to open in Google Maps or get directions
+- Date picker: DateField is a tap-to-pick Arabic calendar (weeks start Saturday, min/max supported). It replaces the typed dates in the Sales custom range
+- Leaderboard: GET /api/stats/leaderboard?month=YYYY-MM (STAFF) ranks distributors by sales (excludes voided). A Leaderboard card on the owner/accountant home has month switching, a sales/collections toggle, and medals
+- Customer statement: StatementActions adds a PDF (expo-print, share sheet on native, print on web), print, and a WhatsApp summary inside the statement sheet
+- Guided tour: GuidedTour runs a first-run walkthrough per role (storage key tour_done_<role>). Tab descriptions come from the role _layout files. It can be replayed from حسابي > الجولة التعريفية
+
 ## Backlog
 - Background location tracking (requires a native build)
 - P1: PDF/print and share for invoices; offline sales queue; purchase returns; reports by date range

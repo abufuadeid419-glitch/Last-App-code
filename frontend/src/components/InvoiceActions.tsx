@@ -7,7 +7,7 @@ import { useApi } from "@/src/hooks";
 import { spacing } from "@/src/theme";
 import { Btn, useToast } from "@/src/ui";
 
-const esc = (s: any) =>
+export const esc = (s: any) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 export function invoiceHtml(doc: any, org: any, logo: string | null, customer: any) {
@@ -78,7 +78,7 @@ function waText(doc: any, org: any) {
   return lines.join("\n");
 }
 
-const normPhone = (p?: string) => (p ?? "").replace(/[^\d]/g, "").replace(/^00/, "");
+export const normPhone = (p?: string) => (p ?? "").replace(/[^\d]/g, "").replace(/^00/, "");
 
 export function InvoiceActions({ doc }: { doc: any }) {
   const toast = useToast();

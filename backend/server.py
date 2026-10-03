@@ -715,6 +715,35 @@ async def agents_performance(user=Depends(STAFF)):
     return out
 
 
+@api.get("/stats/leaderboard")
+async def agents_leaderboard(month: Optional[str] = None, user=Depends(STAFF)):
+    """Monthly distributor ranking (month = YYYY-MM, default current month)."""
+    try:
+        y, mo = map(int, (month or now().strftime("%Y-%m")).split("-"))
+        start = datetime(y, mo, 1)
+    except ValueError:
+        raise HTTPException(400, "صيغة الشهر غير صحيحة")
+    end = datetime(y + (mo == 12), mo % 12 + 1, 1)
+    rng = {"$gte": start.strftime("%Y-%m-%d"), "$lt": end.strftime("%Y-%m-%d")}
+    org = user["org_id"]
+    agents = await db.users.find({"org_id": org, "employee_type": "FIELD_AGENT"}, NO_ID).to_list(200)
+    out = []
+    for a in agents:
+        uid = a["user_id"]
+        sales = await db.sales.find({"org_id": org, "distributor_id": uid, "created_at": rng, "voided": {"$ne": True}},
+                                    {"_id": 0, "total": 1, "customer_id": 1}).to_list(10000)
+        out.append({"user_id": uid, "name": a.get("name"), "email": a["email"],
+                    "sales_total": round(sum(s["total"] for s in sales), 2), "sales_count": len(sales),
+                    "customers_count": len({s["customer_id"] for s in sales}),
+                    "collections_total": await _sum("collections", {"org_id": org, "collector_id": uid, "created_at": rng}, "amount"),
+                    "returns_total": await _sum("sales_returns", {"org_id": org, "distributor_id": uid, "created_at": rng}, "total")})
+    out.sort(key=lambda x: (-x["sales_total"], -x["collections_total"]))
+    for i, x in enumerate(out):
+        x["rank"] = i + 1
+    return {"month": f"{y:04d}-{mo:02d}", "agents": out}
+
+
+
 # ---------------- Extensions: org profile/logo, plans, upgrades, reports, GPS ----------------
 import base64
 import requests

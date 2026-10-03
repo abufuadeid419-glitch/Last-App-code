@@ -4,15 +4,18 @@ import React from "react";
 import { Platform } from "react-native";
 
 import { usesNativeTabs } from "@/src/navigation";
+import { GuidedTour } from "@/src/components/GuidedTour";
 import { fonts, useTheme } from "@/src/theme";
 import { IconName, Ionicons } from "@/src/ui";
 
-export type TabDef = { name: string; title: string; icon: IconName; sf: string };
+export type TabDef = { name: string; title: string; icon: IconName; sf: string; desc?: string };
 
-export function RoleTabs({ tabs }: { tabs: TabDef[] }) {
+export function RoleTabs({ tabs, tourKey }: { tabs: TabDef[]; tourKey: string }) {
   const { colors } = useTheme();
+  const tour = <GuidedTour tourKey={tourKey} tabs={tabs} />;
   if (usesNativeTabs) {
     return (
+      <>
       <NativeTabs tintColor={colors.brandPrimary}>
         {tabs.map((t) => (
           <NativeTabs.Trigger key={t.name} name={t.name}>
@@ -21,9 +24,12 @@ export function RoleTabs({ tabs }: { tabs: TabDef[] }) {
           </NativeTabs.Trigger>
         ))}
       </NativeTabs>
+      {tour}
+      </>
     );
   }
   return (
+    <>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -50,5 +56,7 @@ export function RoleTabs({ tabs }: { tabs: TabDef[] }) {
         />
       ))}
     </Tabs>
+    {tour}
+    </>
   );
 }

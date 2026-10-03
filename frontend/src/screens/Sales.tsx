@@ -4,6 +4,7 @@ import { FlatList, Platform, RefreshControl, TextInput, View } from "react-nativ
 import { fmtDate, money } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { AccountButton } from "@/src/components/AccountButton";
+import { DateField } from "@/src/components/DateField";
 import { InvoiceActions } from "@/src/components/InvoiceActions";
 import { SyncBanner } from "@/src/components/SyncBanner";
 import { useApi, useBottomChrome, useMutate } from "@/src/hooks";
@@ -168,8 +169,8 @@ export default function Sales({ tabs = ["sales", "returns"], title = "الفوا
       <View style={{ paddingHorizontal: spacing.lg, gap: spacing.sm, marginBottom: spacing.sm }}>
         {range === "custom" && (
           <View style={{ flexDirection: "row", gap: spacing.sm }}>
-            <TextInput testID="range-from-input" value={from} onChangeText={setFrom} placeholder="من: 2026-06-01" placeholderTextColor={colors.muted} style={[inputStyle, { flex: 1 }]} />
-            <TextInput testID="range-to-input" value={to} onChangeText={setTo} placeholder="إلى: 2026-06-30" placeholderTextColor={colors.muted} style={[inputStyle, { flex: 1 }]} />
+            <View style={{ flex: 1 }}><DateField testID="range-from-input" label="من تاريخ" value={from} onChange={setFrom} max={to || undefined} /></View>
+            <View style={{ flex: 1 }}><DateField testID="range-to-input" label="إلى تاريخ" value={to} onChange={setTo} min={from || undefined} /></View>
           </View>
         )}
         <TextInput testID="list-search-input" value={search} onChangeText={setSearch} placeholder={searchHint} placeholderTextColor={colors.muted} style={inputStyle} />

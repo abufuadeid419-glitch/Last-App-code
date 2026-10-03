@@ -13,7 +13,7 @@ export function AgentsMap({ agents }: { agents: any[] }) {
     <View style={{ gap: spacing.md }}>
       <Card style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center", backgroundColor: colors.brandTertiary }}>
         <Ionicons name="information-circle-outline" size={20} color={colors.brandPrimary} />
-        <T v="caption" style={{ flex: 1 }}>الخريطة التفاعلية متاحة على تطبيق الهاتف</T>
+        <T v="caption" style={{ flex: 1 }}>اضغط على أي موزع لعرض موقعه على خرائط Google</T>
       </Card>
       {located.map((a) => (
         <AgentLocationRow key={a.user_id} a={a} />

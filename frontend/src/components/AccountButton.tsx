@@ -2,6 +2,7 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 
 import { NotificationBell } from "@/src/components/NotificationBell";
+import { replayTour } from "@/src/components/GuidedTour";
 import { FAQ } from "@/src/legal";
 import { useSyncState } from "@/src/offline";
 import { View } from "react-native";
@@ -56,6 +57,7 @@ export function AccountButton() {
         )}
         <Card style={{ padding: 0, overflow: "hidden" }}>
           <Row testID="open-help-button" icon="help-circle-outline" title="مركز المساعدة" onPress={() => setHelp(!help)} />
+          <Row testID="replay-tour-button" icon="compass-outline" title="الجولة التعريفية" onPress={() => { setOpen(false); setTimeout(replayTour, 400); }} />
           {help && FAQ.map((f, i) => (
             <View key={i} style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
               <T v="label">{f.q}</T>

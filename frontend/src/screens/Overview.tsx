@@ -6,11 +6,13 @@ import { useAuth } from "@/src/auth";
 import { AccountButton } from "@/src/components/AccountButton";
 import { LocationCard } from "@/src/components/LocationCard";
 import { AlertsCard } from "@/src/components/AlertsCard";
+import { Leaderboard } from "@/src/components/Leaderboard";
 import { MyRoute } from "@/src/components/MyRoute";
 import { PendingDeliveries } from "@/src/components/PendingDeliveries";
 import { AgentStock } from "@/src/components/StockRequests";
 import { SyncBanner } from "@/src/components/SyncBanner";
 import { useApi, useBottomChrome } from "@/src/hooks";
+import { queryClient } from "@/src/query-client";
 import { spacing, useTheme } from "@/src/theme";
 import { Badge, Btn, Card, Empty, ErrorBox, Header, Loading, Row, Section, Stat, T } from "@/src/ui";
 
@@ -23,7 +25,6 @@ export default function Overview() {
   const isOwner = user?.role === "OWNER";
   const stats = useApi<any>("/stats/overview");
   const inv = useApi<any[]>("/my/inventory", isAgent);
-  const agents = useApi<any[]>("/stats/agents", !isAgent);
   const s = stats.data;
 
   return (
@@ -32,7 +33,7 @@ export default function Overview() {
       <SyncBanner />
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, gap: spacing.xl, paddingBottom: bottom + spacing.xl }}
-        refreshControl={<RefreshControl refreshing={stats.isRefetching} onRefresh={() => { stats.refetch(); inv.refetch(); agents.refetch(); }} tintColor={colors.brandPrimary} />}
+        refreshControl={<RefreshControl refreshing={stats.isRefetching} onRefresh={() => { stats.refetch(); inv.refetch(); queryClient.invalidateQueries(); }} tintColor={colors.brandPrimary} />}
       >
         {stats.isLoading ? (
           <Loading />
@@ -70,19 +71,7 @@ export default function Overview() {
               </Section>
             )}
 
-            {!isAgent && (
-              <Section title="أداء الموزعين">
-                <Card style={{ padding: 0, overflow: "hidden" }}>
-                  {!agents.data?.length ? (
-                    <Empty icon="people-outline" text="لا يوجد موزعون بعد" />
-                  ) : (
-                    agents.data.map((a) => (
-                      <Row key={a.user_id} icon="person-outline" title={a.name ?? a.email} subtitle={`${a.sales_count} فاتورة · تحصيل ${money(a.collections_total)}`} right={<T v="label" color="success">{money(a.sales_total)}</T>} />
-                    ))
-                  )}
-                </Card>
-              </Section>
-            )}
+            {!isAgent && <Leaderboard />}
 
             <Section title="آخر الفواتير">
               <Card style={{ padding: 0, overflow: "hidden" }}>

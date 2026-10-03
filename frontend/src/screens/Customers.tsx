@@ -5,6 +5,7 @@ import { fmtDate, money } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { AccountButton } from "@/src/components/AccountButton";
 import { CollectSheet } from "@/src/components/CollectSheet";
+import { StatementActions } from "@/src/components/StatementActions";
 import { SyncBanner } from "@/src/components/SyncBanner";
 import { useApi, useBottomChrome, useMutate } from "@/src/hooks";
 import { currentCoords } from "@/src/location";
@@ -29,6 +30,7 @@ export function StatementSheet({ customerId, onClose }: { customerId: string | n
             <T v="caption">{st.data.customer.phone} {st.data.customer.address}</T>
             <T v="label" color={st.data.customer.balance > 0 ? "warning" : "success"} testID="statement-balance">الرصيد المستحق: {money(st.data.customer.balance)}</T>
           </Card>
+          <StatementActions data={st.data} />
           {!st.data.rows.length && <Empty text="لا توجد حركات" />}
           {st.data.rows.map((r: any, i: number) => {
             bal += r.debit - r.credit;

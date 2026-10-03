@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 5 testing — all 5 new features verified end-to-end (backend + frontend). BACKEND: added /app/backend/tests/test_iteration5.py (17 tests, 100% pass). Full regression `pytest tests -n 0` = 147/147 passing (iter2 39 + iter3 44 + iter4 47 + iter5 17). Leaderboard endpoint behaves per spec: STAFF-only (OWNER 200, ACCOUNTANT 200, FIELD_AGENT 403, no-org 403, bad-token 401); default month resolves to current (2026-10); invalid months (not-a-month, 2025-13, abcd-01, 2025/01, 2025-1a) all 400; every agent row carries user_id/name/email/rank/sales_total/sales_count/customers_count/collections_total/returns_total; rank is 1-based and sorted by sales_total DESC; a historical empty month (2000-01) returns zeros for every agent; voided sales are excluded (created a sale total=40, leaderboard sales_total +40 and sales_count +1, voided via /sales/{id}/void, leaderboard dropped exactly 40 and sales_count returned to pre-sale value). FRONTEND (mobile viewport 390x844, Expo web preview): All 5 features render and interact correctly. (1) GUIDED TOUR: appears on first owner load (testID=guided-tour) with tour-next-button / tour-back-button (after advancing) / tour-skip-button; skip dismisses and sets localStorage.tour_done_owner='true'; survives reload; can be replayed from account-button > replay-tour-button. (2) LEADERBOARD: leaderboard-card renders on both owner home (/owner tab-index) and accountant home (/acct tab-index). leaderboard-month shows 'أكتوبر 2026' (Arabic month + year). leaderboard-prev-month works, leaderboard-next-month is HIDDEN on current month and APPEARS after switching to a past month. leaderboard-by-sales / leaderboard-by-collections both toggle; leaderboard-row-user_test_agent exists. (3) GOOGLE MAPS TRACKER (owner tab-more > segment-tracking > open-map-user_test_agent): agent-map-sheet modal opens with iframe whose src contains output=embed AND the exact seeded coords (33.3152, 44.3661); map-type-m/k/h all tappable; agent-map-open-google and agent-map-directions present; agent-map-close-button closes the sheet. (4) DATE PICKER (accountant tab-sales > segment-custom): range-from-input and range-to-input render; tapping opens a calendar sheet with calendar-prev-month / calendar-next-month / calendar-month-label / date-today-button / date-clear-button; picking today closes the sheet, formats the Arabic date ('من تاريخ 3 أكتوبر 2026') and filters the list (list-summary-count went from 93 → 85 — proof filter is wired). (5) STATEMENT PDF (accountant tab-customers > row): statement-sheet opens with statement-share-pdf-button, statement-print-button and statement-whatsapp-button all present. REGRESSION: accountant still has all 5 bottom tabs (tab-index / tab-sales / tab-collections / tab-debts / tab-customers); list-search-input, list-summary-total, list-summary-count still render on the sales list. No React Native red screens, no pageerrors, no HTTP 4xx/5xx during the UI run. The 'props.pointerEvents is deprecated' third-party warning tracked from iter4 is still present (non-blocking).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "pointerEvents prop (3rd-party)", "issue": "Carried from iter4: console warning 'props.pointerEvents is deprecated. Use style.pointerEvents' observed intermittently on initial load. Not blocking; appears to come from a third-party gesture/animation lib."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration5.py",
+    "/app/test_reports/pytest/iteration5.xml",
+    "/app/test_reports/pytest/iteration5_full.xml"
+  ],
+  "action_items": [
+    "(Low) Investigate the lingering 'props.pointerEvents is deprecated' RN web warning — not caused by iter5 code but still noisy in console.",
+    "(Nice-to-have) Add an API-level test asserting that a sale created in month N does NOT appear when leaderboard is requested with month N-1 (cross-month boundary). Current coverage asserts the empty-month path (2000-01) and current-month inclusion/exclusion; explicit month-boundary test would make the YYYY-MM filter airtight."
+  ],
+  "critical_code_review_comments": [
+    "server.py agents_leaderboard: filters sales by {'created_at': rng} where rng uses date-string bounds (YYYY-MM-DD). Since sales.created_at is ISO datetime (iso()) a string lexicographic compare works correctly here, but this is implicit — a brief comment or using proper datetime objects would make the intent and correctness obvious.",
+    "server.py now ~1700 lines; splitting routes into submodules (deliveries, sales, stats, admin, routes-planner) is overdue — iter5 added leaderboard inline alongside overview/agents/reports which is fine but makes server.py the single-biggest refactor target.",
+    "Leaderboard currently iterates agents and issues N+2 queries per agent (sales find + 2 _sum aggregations). For orgs with >100 agents this is O(3N) round-trips. A single $facet aggregation keyed by distributor_id would scale better. Not blocking (seed has 1 agent, orgs rarely >10)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration5.py (new, 17 tests, 100% pass)",
+    "/app/test_reports/pytest/iteration5.xml (new)",
+    "/app/test_reports/pytest/iteration5_full.xml (new, full iter2+3+4+5 regression)",
+    "/app/test_reports/iteration_5.json (new)"
+  ],
+  "success_rate": {
+    "backend": "100% — iter5 17/17 pass; full regression 147/147 pass (iter2 39 + iter3 44 + iter4 47 + iter5 17).",
+    "frontend": "100% of the 5 feature flows + regression smoke verified. 36/36 UI assertions true (tour shows/skips/persists/replays, leaderboard card+month+prev/next/sort+row, agent map sheet+iframe coords+output=embed+map types+open-google+directions+close, date picker opens+picks today+closes+formats Arabic date+filters list from 93→85, statement sheet with all 3 action buttons, accountant 5 tabs + search + summary cards)."
+  },
+  "seed_data_creation": "iter5 adds a single product (TEST_IT5_P, sale 20, +100 stock) and customer (TEST_IT5_C). The void-exclusion test creates a sale (total 40) and voids it in the same test, so leaderboard totals return to pre-test values. All iter2/3/4 seed data (TEST_IT4_P, TEST_IT4_C, TEST_ITER3_* etc.) is preserved. Idempotency fixed-id purge (conftest.py) still runs session-scoped.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run full suite with `cd /app/backend && python -m pytest tests -n 0 --junitxml=/app/test_reports/pytest/<name>.xml` — pytest.ini defaults to -n 2 --dist loadscope but iter2/3/4/5 share module-level state (S dict) so always use -n 0. BACKEND_URL = https://mobile-rebuild-22.preview.emergentagent.com (from frontend/.env EXPO_PUBLIC_BACKEND_URL). Session tokens in /app/memory/test_credentials.md. iter5 testIDs verified live: guided-tour, tour-next-button, tour-back-button, tour-skip-button, replay-tour-button, leaderboard-card, leaderboard-month, leaderboard-prev-month, leaderboard-next-month, leaderboard-by-sales, leaderboard-by-collections, leaderboard-row-<user_id>, open-map-<user_id>, agent-map-sheet, map-type-m/k/h, agent-map-open-google, agent-map-directions, agent-map-close-button, range-from-input, range-to-input, calendar-prev-month, calendar-next-month, calendar-month-label, calendar-day-YYYY-MM-DD, date-today-button, date-clear-button, statement-sheet, statement-share-pdf-button, statement-print-button, statement-whatsapp-button. To dismiss the tour in future tests set localStorage.tour_done_owner / tour_done_acct / tour_done_dist / tour_done_dev to 'true' before reload (did this in the iter5 run after the first fresh-tour assertion).",
+  "rca_of_issue": "No bugs found. Both backend endpoint and all five frontend features behave exactly to spec. The only latent note is that /api/stats/leaderboard uses a date-string range filter against ISO datetime strings — this works because ISO datetime strings are lexicographically ordered the same as datetimes with the same prefix, but using datetime objects would be clearer; non-blocking."
+}
