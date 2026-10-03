@@ -45,6 +45,10 @@ User choices: FastAPI + MongoDB backend, all roles (Developer, Owner, Accountant
 - Push notifications (Emergent managed): playbook received, NOT implemented. Waiting for the user's google-services.json
 - The user's Expo Go shows a 403 "Region Restricted" page, a platform region block rather than a code issue
 
+## Iteration 4 testing (MongoDB restore)
+- Full regression: 130/130 backend tests pass (run serially with `pytest tests -n 0`). All 4 role dashboards render cleanly on web
+- tests/conftest.py removes leftover fixed-id idempotency docs. The outdated test_smart_system.py was removed
+
 ## Backlog
 - Background location tracking (requires a native build)
 - P1: PDF/print and share for invoices; offline sales queue; purchase returns; reports by date range

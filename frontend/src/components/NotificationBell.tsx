@@ -34,7 +34,7 @@ export function NotificationBell() {
       <View>
         <IconBtn testID="notifications-button" icon="notifications-outline" onPress={openSheet} />
         {unread > 0 && (
-          <View testID="notifications-unread-badge" pointerEvents="none" style={{ position: "absolute", top: 4, right: 4, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: colors.error, alignItems: "center", justifyContent: "center", paddingHorizontal: 4 }}>
+          <View testID="notifications-unread-badge" style={{ pointerEvents: "none", position: "absolute", top: 4, right: 4, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: colors.error, alignItems: "center", justifyContent: "center", paddingHorizontal: 4 }}>
             <T v="caption" style={{ color: colors.onError, fontSize: 11, lineHeight: 16 }}>{unread > 9 ? "9+" : unread}</T>
           </View>
         )}

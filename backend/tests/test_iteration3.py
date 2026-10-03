@@ -308,6 +308,9 @@ class TestF_StockRequests:
         d = r.json()
         assert d["status"] == "FULFILLED"
         assert d.get("delivery_id")
+        # iter4: delivery now starts PENDING; agent must confirm to receive stock
+        c = requests.post(f"{API}/deliveries/{d['delivery_id']}/confirm", headers=H("agent"))
+        assert c.status_code == 200, c.text
         inv_after = next(i for i in requests.get(f"{API}/my/inventory", headers=H("agent")).json() if i["product_id"] == STATE["pid"])
         assert inv_after["quantity"] - qty_before == 30
 

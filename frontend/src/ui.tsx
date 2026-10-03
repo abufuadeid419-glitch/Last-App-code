@@ -513,8 +513,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {toast && (
         <Animated.View
           testID="toast-message"
-          pointerEvents="none"
           style={{
+            pointerEvents: "none",
             position: "absolute",
             top: insets.top + spacing.sm,
             left: spacing.lg,
