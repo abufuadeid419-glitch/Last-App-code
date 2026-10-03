@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FlatList, RefreshControl, View } from "react-native";
+import { FlatList, Platform, RefreshControl, TextInput, View } from "react-native";
 
 import { fmtDate, money } from "@/src/api";
 import { useAuth } from "@/src/auth";
@@ -9,11 +9,11 @@ import { SyncBanner } from "@/src/components/SyncBanner";
 import { useApi, useBottomChrome, useMutate } from "@/src/hooks";
 import { offlineReturn } from "@/src/offlineActions";
 import { usePriceResolver } from "@/src/pricing";
-import { spacing, useTheme } from "@/src/theme";
+import { fonts, radius, spacing, useTheme } from "@/src/theme";
 import { Badge, Btn, Card, Empty, ErrorBox, Field, Header, IconBtn, Loading, Row, Segments, Select, Sheet, T, useToast } from "@/src/ui";
 
 type Tab = "sales" | "returns" | "collections" | "purchases" | "purchase_returns";
-type Range = "all" | "today" | "week" | "month";
+type Range = "all" | "today" | "week" | "month" | "custom";
 const since = (r: Range) => {
   const d = new Date();
   if (r === "today") d.setHours(0, 0, 0, 0);
@@ -22,6 +22,19 @@ const since = (r: Range) => {
   else return 0;
   return d.getTime();
 };
+// "YYYY-MM-DD" -> local day start/end timestamp; invalid/empty -> null
+const dayTs = (s: string, end = false) => {
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s.trim());
+  if (!m) return null;
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  if (end) d.setHours(23, 59, 59, 999);
+  return d.getTime();
+};
+const searchText = (x: any) =>
+  [x.customer_name, x.invoice_no, x.return_no, x.receipt_no, x.product_name, x.supplier, x.distributor_name, x.collector_name, ...(x.items ?? []).map((i: any) => i.product_name)]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 
 function InvoiceSheet({ doc, onClose }: { doc: any | null; onClose: () => void }) {
   const { user } = useAuth();
@@ -119,8 +132,21 @@ export default function Sales({ tabs = ["sales", "returns"], title = "الفوا
   const q = useApi<any[]>(paths[tab]);
   const labels: Record<Tab, string> = { sales: "المبيعات", returns: "المرتجعات", collections: "التحصيلات", purchases: "المشتريات", purchase_returns: "مرتجع المشتريات" };
   const [range, setRange] = useState<Range>("all");
-  const data = (q.data ?? []).filter((x) => new Date(x.created_at).getTime() >= since(range));
-  const total = data.reduce((s, x) => s + (x.total ?? x.amount ?? 0), 0);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [search, setSearch] = useState("");
+  const needle = search.trim().toLowerCase();
+  const fromTs = range === "custom" ? dayTs(from) : since(range);
+  const toTs = range === "custom" ? dayTs(to, true) : null;
+  const data = (q.data ?? []).filter((x) => {
+    const ts = new Date(x.created_at).getTime();
+    if (fromTs && ts < fromTs) return false;
+    if (toTs && ts > toTs) return false;
+    return !needle || searchText(x).includes(needle);
+  });
+  const total = data.reduce((s, x) => s + (x.voided ? 0 : (x.total ?? x.amount ?? 0)), 0);
+  const searchHint = tab === "purchases" || tab === "purchase_returns" ? "ابحث بالمنتج أو المورد" : tab === "collections" ? "ابحث بالعميل أو رقم الإيصال" : "ابحث بالعميل أو رقم الفاتورة أو المنتج";
+  const inputStyle = { minHeight: 44, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, paddingHorizontal: spacing.md, fontFamily: fonts.regular, color: colors.onSurface, textAlign: Platform.OS === "web" ? ("right" as const) : undefined };
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }} testID="sales-screen">
@@ -136,8 +162,27 @@ export default function Sales({ tabs = ["sales", "returns"], title = "الفوا
       />
       <SyncBanner />
       {tabs.length > 1 && <Segments value={tab} onChange={setTab} options={tabs.map((k) => ({ key: k, label: labels[k] }))} />}
-      <View style={{ marginTop: -spacing.md }}>
-        <Segments value={range} onChange={setRange} options={[{ key: "all", label: "الكل" }, { key: "today", label: "اليوم" }, { key: "week", label: "7 أيام" }, { key: "month", label: "30 يوماً" }]} />
+      <View>
+        <Segments value={range} onChange={setRange} options={[{ key: "all", label: "الكل" }, { key: "today", label: "اليوم" }, { key: "week", label: "7 أيام" }, { key: "month", label: "30 يوماً" }, { key: "custom", label: "مخصص" }]} />
+      </View>
+      <View style={{ paddingHorizontal: spacing.lg, gap: spacing.sm, marginBottom: spacing.sm }}>
+        {range === "custom" && (
+          <View style={{ flexDirection: "row", gap: spacing.sm }}>
+            <TextInput testID="range-from-input" value={from} onChangeText={setFrom} placeholder="من: 2026-06-01" placeholderTextColor={colors.muted} style={[inputStyle, { flex: 1 }]} />
+            <TextInput testID="range-to-input" value={to} onChangeText={setTo} placeholder="إلى: 2026-06-30" placeholderTextColor={colors.muted} style={[inputStyle, { flex: 1 }]} />
+          </View>
+        )}
+        <TextInput testID="list-search-input" value={search} onChangeText={setSearch} placeholder={searchHint} placeholderTextColor={colors.muted} style={inputStyle} />
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
+          <Card style={{ flex: 1, gap: 2, padding: spacing.md }}>
+            <T v="caption">الإجمالي</T>
+            <T v="h2" color="brandPrimary" testID="list-summary-total">{money(total)}</T>
+          </Card>
+          <Card style={{ flex: 1, gap: 2, padding: spacing.md }}>
+            <T v="caption">عدد العمليات</T>
+            <T v="h2" testID="list-summary-count">{data.length}</T>
+          </Card>
+        </View>
       </View>
       {q.isLoading ? (
         <Loading />

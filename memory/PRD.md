@@ -49,6 +49,11 @@ User choices: FastAPI + MongoDB backend, all roles (Developer, Owner, Accountant
 - Full regression: 130/130 backend tests pass (run serially with `pytest tests -n 0`). All 4 role dashboards render cleanly on web
 - tests/conftest.py removes leftover fixed-id idempotency docs. The outdated test_smart_system.py was removed
 
+## Iteration 5 (2026-06)
+- Invoice/collection/purchase lists (src/screens/Sales.tsx) gained search (customer, invoice no, product, supplier), summary cards (total and operation count), and a custom from/to date range ("مخصص", YYYY-MM-DD)
+- The accountant now has a separate bottom tab for التحصيلات (app/acct/collections.tsx)
+- Segments row no longer shrinks when the screen content overflows (ui.tsx)
+
 ## Backlog
 - Background location tracking (requires a native build)
 - P1: PDF/print and share for invoices; offline sales queue; purchase returns; reports by date range
