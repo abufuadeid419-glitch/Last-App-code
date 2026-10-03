@@ -3,6 +3,7 @@ import { Linking, View } from "react-native";
 
 import { api } from "@/src/api";
 import { directionsUrl, stopBadge } from "@/src/components/MyRoute";
+import { RouteKPIs } from "@/src/components/RouteKPIs";
 import { RouteMap } from "@/src/components/RouteMap";
 import { useApi } from "@/src/hooks";
 import { queryClient } from "@/src/query-client";
@@ -125,6 +126,7 @@ export function RoutePlanner({ agents }: { agents: any[] }) {
         <Btn testID="optimize-route-button" style={{ flex: 1 }} variant="secondary" title="ترتيب حسب الأقرب" icon="git-network-outline" loading={busy === "opt"} onPress={() => run("opt")} />
       </View>
       {route && <Btn testID="delete-route-button" variant="ghost" title="حذف خط السير" loading={busy === "del"} onPress={() => run("del")} />}
+      <RouteKPIs />
     </View>
   );
 }

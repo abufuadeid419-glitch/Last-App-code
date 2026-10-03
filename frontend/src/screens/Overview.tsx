@@ -5,7 +5,9 @@ import { money } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { AccountButton } from "@/src/components/AccountButton";
 import { LocationCard } from "@/src/components/LocationCard";
+import { AlertsCard } from "@/src/components/AlertsCard";
 import { MyRoute } from "@/src/components/MyRoute";
+import { PendingDeliveries } from "@/src/components/PendingDeliveries";
 import { AgentStock } from "@/src/components/StockRequests";
 import { SyncBanner } from "@/src/components/SyncBanner";
 import { useApi, useBottomChrome } from "@/src/hooks";
@@ -53,6 +55,8 @@ export default function Overview() {
               {!isAgent && <Stat testID="stat-returns" label="المرتجعات" value={money(s.returns_total)} icon="return-down-back-outline" tone="error" />}
             </View>
 
+            {isAgent && <PendingDeliveries />}
+            {!isAgent && <AlertsCard />}
             {isAgent && <MyRoute />}
             {isAgent && <AgentStock />}
 

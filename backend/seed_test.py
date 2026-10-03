@@ -7,10 +7,10 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
-from motor.motor_asyncio import AsyncIOMotorClient
+from pgstore import PgDB
 
 load_dotenv(Path(__file__).parent / '.env')
-db = AsyncIOMotorClient(os.environ['MONGO_URL'])[os.environ['DB_NAME']]
+db = PgDB(os.environ['SUPABASE_DB_URL'])
 
 ORG = "org_test_1"
 USERS = [
@@ -31,9 +31,11 @@ async def main():
     for uid, email, name, role, et, org, tok in USERS:
         await db.users.update_one({"email": email}, {"$set": {
             "user_id": uid, "email": email, "name": name, "picture": None, "role": role,
-            "employee_type": et, "org_id": org, "created_at": now.isoformat()}}, upsert=True)
+            "employee_type": et, "org_id": org, "created_at": now.isoformat(),
+            "consent_at": None if uid == "user_test_new" else now.isoformat()}}, upsert=True)
         await db.user_sessions.update_one({"session_token": tok}, {"$set": {
             "session_token": tok, "user_id": uid, "expires_at": now + timedelta(days=30), "created_at": now}}, upsert=True)
+    await db.close()
     print("seeded")
 
 

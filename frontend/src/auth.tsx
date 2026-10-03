@@ -22,6 +22,7 @@ export type User = {
   employee_type: "FIELD_AGENT" | "ACCOUNTANT" | null;
   org_id: string | null;
   org: any;
+  consent_at?: string;
 };
 
 type Ctx = {
@@ -163,6 +164,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function homeFor(u: User | null | undefined): string {
   if (!u) return "login";
+  if (!u.consent_at) return "consent";
   if (!u.role) return "activate";
   if (u.role === "DEVELOPER") return "dev";
   const org = u.org;

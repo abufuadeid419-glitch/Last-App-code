@@ -13,16 +13,20 @@ const geo = () => {
 
 type Line = { product_id: string; product_name: string; quantity: number; price: number };
 
-export async function offlineSale(p: { customer: any; lines: Line[]; paid: number | null; notes: string; userName?: string }) {
+export async function offlineSale(p: { customer: any; lines: Line[]; paid: number | null; notes: string; userName?: string; discountType?: "NONE" | "PERCENT" | "FIXED"; discountValue?: number }) {
   const id = uid();
   const items = p.lines.map((l) => ({ ...l, total: r2(l.quantity * l.price) }));
-  const total = r2(items.reduce((s, i) => s + i.total, 0));
+  const subtotal = r2(items.reduce((s, i) => s + i.total, 0));
+  const dt = p.discountType ?? "NONE";
+  const dv = p.discountValue ?? 0;
+  const discount = dt === "PERCENT" ? r2((subtotal * Math.min(dv, 100)) / 100) : dt === "FIXED" ? r2(Math.min(dv, subtotal)) : 0;
+  const total = r2(subtotal - discount);
   const paid = Math.min(p.paid ?? total, total);
   const remaining = r2(total - paid);
-  const body = { id, customer_id: p.customer.id, items: items.map(({ product_id, quantity, price }) => ({ product_id, quantity, price })), paid_amount: paid, notes: p.notes, ...geo() };
+  const body = { id, customer_id: p.customer.id, items: items.map(({ product_id, quantity, price }) => ({ product_id, quantity, price })), paid_amount: paid, notes: p.notes, discount_type: dt, discount_value: dv, ...geo() };
   const doc = {
     id, pending: true, invoice_no: tempNo("INV", id), customer_id: p.customer.id, customer_name: p.customer.name,
-    distributor_name: p.userName, items, total, paid_amount: paid, remaining,
+    distributor_name: p.userName, items, subtotal, discount_type: discount ? dt : "NONE", discount_value: discount ? dv : 0, discount_amount: discount, total, paid_amount: paid, remaining,
     payment_type: paid >= total ? "CASH" : "CREDIT", notes: p.notes, created_at: new Date().toISOString(),
   };
   await updateCached<any[]>("/my/inventory", (inv) =>
@@ -85,4 +89,20 @@ export async function offlineStockRequest(items: { product_id: string; product_n
   await updateCached<any[]>("/stock-requests", (l) => [doc, ...l]);
   await enqueue({ id, path: "/stock-requests", body: { id, items: items.map(({ product_id, quantity }) => ({ product_id, quantity })), note }, label: `طلب تعبئة · ${items.length} صنف` });
   return doc;
+}
+
+export async function offlineDeliveryAction(d: any, action: "confirm" | "reject") {
+  const id = uid();
+  await updateCached<any[]>("/deliveries", (l) => l.map((x) => (x.id === d.id ? { ...x, status: action === "confirm" ? "CONFIRMED" : "REJECTED" } : x)));
+  if (action === "confirm") {
+    await updateCached<any[]>("/my/inventory", (inv) => {
+      let next = [...inv];
+      for (const it of d.items) {
+        const f = next.find((i) => i.product_id === it.product_id);
+        next = f ? next.map((i) => (i.product_id === it.product_id ? { ...i, quantity: r2(i.quantity + it.quantity) } : i)) : [...next, { product_id: it.product_id, product_name: it.product_name, quantity: it.quantity, sale_price: 0, min_stock: 0 }];
+      }
+      return next;
+    });
+  }
+  await enqueue({ id, path: `/deliveries/${d.id}/${action}`, body: {}, label: `${action === "confirm" ? "تأكيد استلام" : "رفض"} شحنة` });
 }

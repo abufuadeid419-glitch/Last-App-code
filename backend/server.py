@@ -130,6 +130,8 @@ class SaleIn(GeoMixin):
     items: List[LineIn]
     paid_amount: float = Field(ge=0, default=0)
     notes: str = ""
+    discount_type: str = "NONE"  # NONE | PERCENT | FIXED
+    discount_value: float = Field(ge=0, default=0)
 
 
 class CollectionIn(GeoMixin):
@@ -356,12 +358,20 @@ async def list_products(user=Depends(ANY_ORG)):
 async def create_product(body: ProductIn, user=Depends(OWNER)):
     doc = {"id": new_id(), "org_id": user["org_id"], **body.model_dump(), "created_at": iso()}
     await db.products.insert_one(dict(doc))
+    if body.stock:
+        await log_movement(user["org_id"], doc["id"], body.name, "ADJUSTMENT", body.stock, user)
     return doc
 
 
 @api.put("/products/{pid}")
 async def update_product(pid: str, body: ProductIn, user=Depends(OWNER)):
+    old = await db.products.find_one({"id": pid, "org_id": user["org_id"]}, NO_ID)
     await db.products.update_one({"id": pid, "org_id": user["org_id"]}, {"$set": body.model_dump()})
+    if old and old["stock"] != body.stock:
+        await log_movement(user["org_id"], pid, body.name, "ADJUSTMENT", round(body.stock - old["stock"], 2), user)
+    if old and old["sale_price"] != body.sale_price:
+        await db.price_history.insert_one({"org_id": user["org_id"], "product_id": pid, "product_name": body.name,
+                                           "old_price": old["sale_price"], "new_price": body.sale_price, "by": user.get("name"), "at": iso()})
     return await db.products.find_one({"id": pid}, NO_ID)
 
 
@@ -471,6 +481,7 @@ async def create_purchase(body: PurchaseIn, user=Depends(OWNER)):
            "supplier": body.supplier, "created_at": iso()}
     await db.purchases.insert_one(dict(doc))
     await db.products.update_one({"id": prod["id"]}, {"$inc": {"stock": body.quantity}, "$set": {"cost_price": body.unit_cost}})
+    await log_movement(user["org_id"], prod["id"], prod["name"], "PURCHASE", body.quantity, user)
     return doc
 
 
@@ -496,13 +507,12 @@ async def create_delivery(body: DeliveryIn, user=Depends(OWNER)):
         items.append({"product_id": prod["id"], "product_name": prod["name"], "quantity": it.quantity})
     for it in items:
         await db.products.update_one({"id": it["product_id"]}, {"$inc": {"stock": -it["quantity"]}})
-        await db.distributor_inventory.update_one(
-            {"distributor_id": dist["user_id"], "product_id": it["product_id"]},
-            {"$inc": {"quantity": it["quantity"]}, "$set": {"org_id": user["org_id"], "product_name": it["product_name"]}},
-            upsert=True)
+        await log_movement(user["org_id"], it["product_id"], it["product_name"], "DELIVERY", -it["quantity"], user)
     doc = {"id": new_id(), "org_id": user["org_id"], "distributor_id": dist["user_id"], "distributor_name": dist.get("name"),
-           "items": items, "notes": body.notes, "created_at": iso()}
+           "items": items, "notes": body.notes, "status": "PENDING", "created_at": iso()}
     await db.deliveries.insert_one(dict(doc))
+    await notify([dist["user_id"]], "delivery", "شحنة بضاعة جديدة", f"لديك شحنة من {len(items)} صنف بانتظار التأكيد")
+    await check_low_stock(user["org_id"], [i["product_id"] for i in items])
     return doc
 
 
@@ -560,16 +570,25 @@ async def create_sale(body: SaleIn, user=Depends(AGENT)):
         line = round(it.quantity * price, 2)
         total += line
         items.append({"product_id": it.product_id, "product_name": inv["product_name"], "quantity": it.quantity, "price": price, "total": line})
-    total = round(total, 2)
+    subtotal = round(total, 2)
+    if body.discount_type == "PERCENT":
+        discount = round(subtotal * min(body.discount_value, 100) / 100, 2)
+    elif body.discount_type == "FIXED":
+        discount = round(min(body.discount_value, subtotal), 2)
+    else:
+        discount = 0.0
+    total = round(subtotal - discount, 2)
     paid = min(body.paid_amount, total)
     for it in items:
         await db.distributor_inventory.update_one({"distributor_id": user["user_id"], "product_id": it["product_id"]}, {"$inc": {"quantity": -it["quantity"]}})
+        await log_movement(user["org_id"], it["product_id"], it["product_name"], "SALE", -it["quantity"], user, "AGENT")
     await db.customers.update_one({"id": cust["id"]}, {"$inc": {"balance": round(total - paid, 2)}})
     if body.lat is not None and cust.get("lat") is None:
         await db.customers.update_one({"id": cust["id"]}, {"$set": {"lat": body.lat, "lng": body.lng}})
     doc = {"id": body.id or new_id(), **geo(body), "org_id": user["org_id"], "invoice_no": await next_no(user["org_id"], "sale", "INV"),
            "customer_id": cust["id"], "customer_name": cust["name"], "distributor_id": user["user_id"],
-           "distributor_name": user.get("name"), "items": items, "total": total, "paid_amount": paid,
+           "distributor_name": user.get("name"), "items": items, "subtotal": subtotal, "discount_type": body.discount_type if discount else "NONE",
+           "discount_value": body.discount_value if discount else 0, "discount_amount": discount, "total": total, "paid_amount": paid,
            "remaining": round(total - paid, 2), "payment_type": "CASH" if paid >= total else "CREDIT",
            "notes": body.notes, "created_at": iso()}
     await db.sales.insert_one(dict(doc))
@@ -634,6 +653,7 @@ async def create_return(body: ReturnIn, user=Depends(AGENT)):
         await db.distributor_inventory.update_one(
             {"distributor_id": user["user_id"], "product_id": prod["id"]},
             {"$inc": {"quantity": it.quantity}, "$set": {"org_id": user["org_id"], "product_name": prod["name"]}}, upsert=True)
+        await log_movement(user["org_id"], prod["id"], prod["name"], "RETURN", it.quantity, user, "AGENT")
     total = round(total, 2)
     await db.customers.update_one({"id": cust["id"]}, {"$inc": {"balance": -total}})
     doc = {"id": body.id or new_id(), **geo(body), "org_id": user["org_id"], "return_no": await next_no(user["org_id"], "ret", "RET"),
@@ -663,7 +683,7 @@ async def overview(user=Depends(ANY_ORG)):
     cost = 0.0
     if user.get("role") == "OWNER":
         costs = {p["id"]: p["cost_price"] for p in products}
-        async for s in db.sales.find(q, {"items": 1}):
+        async for s in db.sales.find({**q, "voided": {"$ne": True}}, {"items": 1}):
             cost += sum(costs.get(i["product_id"], 0) * i["quantity"] for i in s["items"])
     return {
         "sales_total": sales_total,
@@ -787,7 +807,8 @@ PROFILE_FIELDS = ["name", "phone", "email", "address", "tax_no", "cr_no", "invoi
 @api.get("/org/profile")
 async def org_profile(user=Depends(ANY_ORG)):
     org = await db.organizations.find_one({"id": user["org_id"]}, NO_ID)
-    return {**{k: org.get(k, "") for k in PROFILE_FIELDS}, "has_logo": bool(org.get("logo_path"))}
+    return {**{k: org.get(k, "") for k in PROFILE_FIELDS}, "has_logo": bool(org.get("logo_path")),
+            "currency": org.get("currency", ""), "alt_currency": org.get("alt_currency", ""), "exchange_rate": org.get("exchange_rate", 0)}
 
 
 @api.put("/org/profile")
@@ -925,6 +946,9 @@ async def review_upgrade(rid: str, body: ReviewIn, user=Depends(DEV)):
     else:
         raise HTTPException(400, "إجراء غير صالح")
     await db.upgrade_requests.update_one({"id": rid}, {"$set": {"status": status, "review_note": body.note, "reviewed_at": iso()}})
+    org = await db.organizations.find_one({"id": req["org_id"]}, NO_ID)
+    if org:
+        await notify([org["owner_id"]], "upgrade", "تمت الموافقة على الترقية" if status == "APPROVED" else "تم رفض طلب الترقية", req["plan_name"])
     return await db.upgrade_requests.find_one({"id": rid}, NO_ID)
 
 
@@ -961,7 +985,7 @@ async def reports(period: str = "day", user=Depends(STAFF)):
     org = user["org_id"]
     is_owner = user.get("role") == "OWNER"
     costs = {p["id"]: p["cost_price"] for p in await db.products.find({"org_id": org}, NO_ID).to_list(2000)}
-    async for s in db.sales.find({"org_id": org, "created_at": {"$gte": start}}, NO_ID):
+    async for s in db.sales.find({"org_id": org, "created_at": {"$gte": start}, "voided": {"$ne": True}}, NO_ID):
         k = _bucket(datetime.fromisoformat(s["created_at"]), period)
         if k in buckets:
             b = buckets[k]
@@ -1222,6 +1246,7 @@ async def create_stock_request(body: StockReqIn, user=Depends(AGENT)):
     doc = {"id": body.id or new_id(), "org_id": user["org_id"], "distributor_id": user["user_id"], "distributor_name": user.get("name"),
            "items": items, "note": body.note, "status": "PENDING", "created_at": iso()}
     await db.stock_requests.insert_one(dict(doc))
+    await notify(await org_owner_ids(user["org_id"]), "stock_request", "طلب تعبئة مخزون", f"{user.get('name')} طلب {len(items)} صنف")
     return doc
 
 
@@ -1240,6 +1265,375 @@ async def fulfill_stock_request(rid: str, user=Depends(OWNER)):
 async def reject_stock_request(rid: str, user=Depends(OWNER)):
     await db.stock_requests.update_one({"id": rid, "org_id": user["org_id"], "status": "PENDING"}, {"$set": {"status": "REJECTED", "handled_at": iso()}})
     return await db.stock_requests.find_one({"id": rid}, NO_ID)
+
+
+# ---------------- Iteration 4: completeness ----------------
+async def log_movement(org_id, product_id, product_name, mtype, qty, user, location="WAREHOUSE"):
+    await db.stock_movements.insert_one({"id": new_id(), "org_id": org_id, "product_id": product_id, "product_name": product_name,
+                                         "type": mtype, "quantity": qty, "location": location, "by": user.get("name"),
+                                         "by_id": user.get("user_id"), "created_at": iso()})
+
+
+async def notify(user_ids, ntype, title, body):
+    docs = [{"id": new_id(), "user_id": u, "type": ntype, "title": title, "body": body, "read": False, "created_at": iso()} for u in user_ids if u]
+    if docs:
+        await db.notifications.insert_many(docs)
+
+
+async def org_owner_ids(org_id):
+    org = await db.organizations.find_one({"id": org_id}, NO_ID)
+    return [org["owner_id"]] if org else []
+
+
+async def check_low_stock(org_id, product_ids):
+    for pid in product_ids:
+        p = await db.products.find_one({"id": pid, "org_id": org_id}, NO_ID)
+        if p and p["stock"] <= p.get("min_stock", 0):
+            kind = "out_of_stock" if p["stock"] <= 0 else "low_stock"
+            await notify(await org_owner_ids(org_id), kind, "نفاد المخزون" if kind == "out_of_stock" else "مخزون منخفض",
+                         f"{p['name']}: المتبقي {p['stock']} {p.get('unit', '')}")
+
+
+# ---- Delivery confirmation by distributor ----
+@api.post("/deliveries/{did}/confirm")
+async def confirm_delivery(did: str, user=Depends(AGENT)):
+    d = await db.deliveries.find_one({"id": did, "distributor_id": user["user_id"], "status": "PENDING"}, NO_ID)
+    if not d:
+        raise HTTPException(404, "الشحنة غير موجودة أو تمت معالجتها")
+    for it in d["items"]:
+        await db.distributor_inventory.update_one(
+            {"distributor_id": user["user_id"], "product_id": it["product_id"]},
+            {"$inc": {"quantity": it["quantity"]}, "$set": {"org_id": user["org_id"], "product_name": it["product_name"]}}, upsert=True)
+    await db.deliveries.update_one({"id": did}, {"$set": {"status": "CONFIRMED", "handled_at": iso()}})
+    await notify(await org_owner_ids(user["org_id"]), "delivery_confirmed", "تم استلام الشحنة", f"{user.get('name')} أكد استلام الشحنة")
+    return await db.deliveries.find_one({"id": did}, NO_ID)
+
+
+@api.post("/deliveries/{did}/reject")
+async def reject_delivery(did: str, user=Depends(AGENT)):
+    d = await db.deliveries.find_one({"id": did, "distributor_id": user["user_id"], "status": "PENDING"}, NO_ID)
+    if not d:
+        raise HTTPException(404, "الشحنة غير موجودة أو تمت معالجتها")
+    for it in d["items"]:
+        await db.products.update_one({"id": it["product_id"]}, {"$inc": {"stock": it["quantity"]}})
+        await log_movement(user["org_id"], it["product_id"], it["product_name"], "DELIVERY_REJECTED", it["quantity"], user)
+    await db.deliveries.update_one({"id": did}, {"$set": {"status": "REJECTED", "handled_at": iso()}})
+    await notify(await org_owner_ids(user["org_id"]), "delivery_rejected", "تم رفض شحنة", f"{user.get('name')} رفض الشحنة وأعيدت الكمية للمستودع")
+    return await db.deliveries.find_one({"id": did}, NO_ID)
+
+
+# ---- Void sale (owner / accountant) ----
+class VoidIn(BaseModel):
+    reason: str = ""
+
+
+@api.post("/sales/{sid}/void")
+async def void_sale(sid: str, body: VoidIn, user=Depends(STAFF)):
+    s = await db.sales.find_one({"id": sid, "org_id": user["org_id"]}, NO_ID)
+    if not s or s.get("voided"):
+        raise HTTPException(404, "الفاتورة غير موجودة أو ملغاة")
+    for it in s["items"]:
+        await db.distributor_inventory.update_one({"distributor_id": s["distributor_id"], "product_id": it["product_id"]}, {"$inc": {"quantity": it["quantity"]}})
+        await log_movement(user["org_id"], it["product_id"], it["product_name"], "SALE_VOID", it["quantity"], user, "AGENT")
+    await db.customers.update_one({"id": s["customer_id"]}, {"$inc": {"balance": -s["remaining"]}})
+    # Voided sales are excluded from totals by zeroing their amounts in a separate field set.
+    await db.sales.update_one({"id": sid}, {"$set": {"voided": True, "void_reason": body.reason, "voided_by": user.get("name"), "voided_at": iso(),
+                                                     "orig_total": s["total"], "total": 0, "paid_amount": 0, "remaining": 0}})
+    return await db.sales.find_one({"id": sid}, NO_ID)
+
+
+# ---- Purchase returns (warehouse -> supplier) ----
+class PurchaseReturnIn(BaseModel):
+    product_id: str
+    quantity: float = Field(gt=0)
+    unit_cost: float = Field(ge=0)
+    supplier: str = ""
+    reason: str = ""
+
+
+@api.get("/purchase-returns")
+async def list_purchase_returns(user=Depends(STAFF)):
+    return await db.purchase_returns.find({"org_id": user["org_id"]}, NO_ID).sort("created_at", -1).to_list(500)
+
+
+@api.post("/purchase-returns")
+async def create_purchase_return(body: PurchaseReturnIn, user=Depends(OWNER)):
+    prod = await db.products.find_one({"id": body.product_id, "org_id": user["org_id"]}, NO_ID)
+    if not prod:
+        raise HTTPException(404, "المنتج غير موجود")
+    if prod["stock"] < body.quantity:
+        raise HTTPException(400, "الكمية أكبر من المتوفر في المستودع")
+    doc = {"id": new_id(), "org_id": user["org_id"], "return_no": await next_no(user["org_id"], "pret", "PRT"), "product_id": prod["id"],
+           "product_name": prod["name"], "quantity": body.quantity, "unit_cost": body.unit_cost, "total": round(body.quantity * body.unit_cost, 2),
+           "supplier": body.supplier, "reason": body.reason, "created_at": iso()}
+    await db.purchase_returns.insert_one(dict(doc))
+    await db.products.update_one({"id": prod["id"]}, {"$inc": {"stock": -body.quantity}})
+    await log_movement(user["org_id"], prod["id"], prod["name"], "PURCHASE_RETURN", -body.quantity, user)
+    await check_low_stock(user["org_id"], [prod["id"]])
+    return doc
+
+
+# ---- Stock movements / price history ----
+@api.get("/stock-movements")
+async def stock_movements(product_id: Optional[str] = None, user=Depends(STAFF)):
+    q = {"org_id": user["org_id"]}
+    if product_id:
+        q["product_id"] = product_id
+    return await db.stock_movements.find(q, NO_ID).sort("created_at", -1).to_list(500)
+
+
+@api.get("/price-history")
+async def price_history(user=Depends(STAFF)):
+    return await db.price_history.find({"org_id": user["org_id"]}, {"_id": 0}).sort("at", -1).to_list(300)
+
+
+# ---- Notifications ----
+@api.get("/notifications")
+async def list_notifications(user=Depends(get_user)):
+    items = await db.notifications.find({"user_id": user["user_id"]}, NO_ID).sort("created_at", -1).to_list(100)
+    return {"items": items, "unread": sum(1 for i in items if not i["read"])}
+
+
+@api.post("/notifications/read-all")
+async def read_all_notifications(user=Depends(get_user)):
+    await db.notifications.update_many({"user_id": user["user_id"]}, {"$set": {"read": True}})
+    return {"ok": True}
+
+
+# ---- Accountant alerts ----
+@api.get("/stats/alerts")
+async def alerts(user=Depends(STAFF)):
+    org = user["org_id"]
+    t = now()
+    out = []
+    overdue = await db.sales.find({"org_id": org, "remaining": {"$gt": 0}, "created_at": {"$lt": (t - timedelta(days=30)).isoformat()}}, NO_ID).to_list(1000)
+    if overdue:
+        out.append({"id": "overdue", "severity": "critical", "icon": "time-outline", "title": f"{len(overdue)} فاتورة متأخرة أكثر من 30 يوماً",
+                    "description": f"إجمالي المتأخر: {round(sum(s['remaining'] for s in overdue), 2)}"})
+    debtors = await db.customers.find({"org_id": org, "balance": {"$gt": 0}}, NO_ID).to_list(2000)
+    if debtors:
+        avg = sum(c["balance"] for c in debtors) / len(debtors)
+        risky = [c for c in debtors if c["balance"] > avg * 3]
+        if risky:
+            out.append({"id": "high-risk", "severity": "warning", "icon": "people-outline", "title": f"{len(risky)} عميل عالي المخاطر",
+                        "description": "، ".join(c["name"] for c in risky[:3])})
+    week = (t - timedelta(days=7)).isoformat()
+    prev = (t - timedelta(days=14)).isoformat()
+    w_sales = await _sum("sales", {"org_id": org, "created_at": {"$gte": week}}, "total")
+    p_sales = await _sum("sales", {"org_id": org, "created_at": {"$gte": prev, "$lt": week}}, "total")
+    w_cash = await _sum("sales", {"org_id": org, "created_at": {"$gte": week}}, "paid_amount") + \
+        await _sum("collections", {"org_id": org, "created_at": {"$gte": week}}, "amount")
+    if w_sales > 0 and w_cash / w_sales < 0.5:
+        out.append({"id": "low-collection", "severity": "warning", "icon": "cash-outline", "title": "نسبة تحصيل منخفضة هذا الأسبوع",
+                    "description": f"نسبة التحصيل {round(w_cash / w_sales * 100)}%"})
+    if p_sales > 0 and w_sales < p_sales * 0.7:
+        out.append({"id": "sales-drop", "severity": "info", "icon": "trending-down-outline", "title": "انخفاض المبيعات",
+                    "description": f"انخفضت المبيعات {round((1 - w_sales / p_sales) * 100)}% مقارنة بالأسبوع السابق"})
+    return out
+
+
+# ---- Finance / discounts analytics ----
+@api.get("/stats/finance")
+async def finance(user=Depends(STAFF)):
+    org = user["org_id"]
+    sales = await db.sales.find({"org_id": org, "voided": {"$ne": True}}, NO_ID).to_list(5000)
+    cash = [s for s in sales if s["payment_type"] == "CASH"]
+    credit = [s for s in sales if s["payment_type"] == "CREDIT"]
+    by_cust = {}
+    for s in sales:
+        if s.get("discount_amount"):
+            by_cust.setdefault(s["customer_name"], 0)
+            by_cust[s["customer_name"]] += s["discount_amount"]
+    return {
+        "sales_total": round(sum(s["total"] for s in sales), 2),
+        "invoice_count": len(sales),
+        "cash_total": round(sum(s["total"] for s in cash), 2),
+        "credit_total": round(sum(s["total"] for s in credit), 2),
+        "cash_discounts": round(sum(s.get("discount_amount", 0) for s in cash), 2),
+        "credit_discounts": round(sum(s.get("discount_amount", 0) for s in credit), 2),
+        "collections_total": await _sum("collections", {"org_id": org}, "amount"),
+        "collection_ops": await db.collections.count_documents({"org_id": org}),
+        "debt_customers": await db.customers.count_documents({"org_id": org, "balance": {"$gt": 0}}),
+        "debts_total": await _sum("customers", {"org_id": org, "balance": {"$gt": 0}}, "balance"),
+        "purchases_total": await _sum("purchases", {"org_id": org}, "total"),
+        "purchase_returns_total": await _sum("purchase_returns", {"org_id": org}, "total"),
+        "top_discount_customers": sorted([{"name": k, "amount": round(v, 2)} for k, v in by_cust.items()], key=lambda x: -x["amount"])[:5],
+    }
+
+
+# ---- Route KPIs / history ----
+@api.get("/routes/kpis")
+async def route_kpis(days: int = 7, user=Depends(STAFF)):
+    since = (now() - timedelta(days=days)).date().isoformat()
+    routes = await db.routes.find({"org_id": user["org_id"], "date": {"$gte": since}}, NO_ID).sort("date", -1).to_list(1000)
+    agg = {}
+    for r in routes:
+        a = agg.setdefault(r["distributor_id"], {"distributor_id": r["distributor_id"], "name": r.get("distributor_name"), "routes": 0,
+                                                 "stops": 0, "visited": 0, "skipped": 0, "pending": 0, "sold": 0})
+        a["routes"] += 1
+        sold_customers = {s["customer_id"] for s in await db.sales.find(
+            {"distributor_id": r["distributor_id"], "created_at": {"$gte": r["date"], "$lt": r["date"] + "T23:59:59.999"}}, {"customer_id": 1}).to_list(1000)}
+        for st in r["stops"]:
+            a["stops"] += 1
+            a[{"VISITED": "visited", "SKIPPED": "skipped"}.get(st["status"], "pending")] += 1
+            if st["customer_id"] in sold_customers:
+                a["sold"] += 1
+    out = []
+    for a in agg.values():
+        a["visit_rate"] = round(a["visited"] / a["stops"] * 100) if a["stops"] else 0
+        a["conversion_rate"] = round(a["sold"] / a["stops"] * 100) if a["stops"] else 0
+        out.append(a)
+    out.sort(key=lambda x: -x["visit_rate"])
+    return {"agents": out, "history": routes[:30]}
+
+
+# ---- Org currency settings ----
+class CurrencyIn(BaseModel):
+    currency: str = "ل.س"
+    alt_currency: str = ""
+    exchange_rate: float = Field(ge=0, default=0)
+
+
+@api.put("/org/currency")
+async def set_currency(body: CurrencyIn, user=Depends(OWNER)):
+    await db.organizations.update_one({"id": user["org_id"]}, {"$set": body.model_dump()})
+    return body.model_dump()
+
+
+# ---- Backup export ----
+@api.get("/backup/export")
+async def backup_export(user=Depends(OWNER)):
+    org = user["org_id"]
+    data = {"exported_at": iso(), "organization": await db.organizations.find_one({"id": org}, {"_id": 0, "logo_path": 0})}
+    for c in ["products", "customers", "customer_types", "sales", "collections", "sales_returns", "purchases", "purchase_returns",
+              "deliveries", "stock_movements", "routes", "stock_requests"]:
+        data[c] = await db[c].find({"org_id": org}, NO_ID).to_list(20000)
+    data["employees"] = await db.users.find({"org_id": org}, {"_id": 0, "user_id": 1, "name": 1, "email": 1, "employee_type": 1, "role": 1}).to_list(500)
+    return data
+
+
+# ---- Deletion requests (org) + account deletion ----
+class DeletionIn(BaseModel):
+    reason: str = ""
+
+
+@api.post("/deletion-requests")
+async def request_org_deletion(body: DeletionIn, user=Depends(owner_any)):
+    if await db.deletion_requests.find_one({"org_id": user["org_id"], "status": "PENDING"}):
+        raise HTTPException(400, "يوجد طلب حذف قيد المراجعة")
+    org = await db.organizations.find_one({"id": user["org_id"]}, NO_ID)
+    doc = {"id": new_id(), "org_id": org["id"], "org_name": org["name"], "owner_email": user["email"], "reason": body.reason,
+           "status": "PENDING", "created_at": iso()}
+    await db.deletion_requests.insert_one(dict(doc))
+    return doc
+
+
+@api.get("/deletion-requests")
+async def list_deletion_requests(user=Depends(get_user)):
+    if user.get("role") == "DEVELOPER":
+        return await db.deletion_requests.find({}, NO_ID).sort("created_at", -1).to_list(200)
+    if user.get("role") == "OWNER":
+        return await db.deletion_requests.find({"org_id": user["org_id"]}, NO_ID).to_list(20)
+    raise HTTPException(403, "ليس لديك صلاحية")
+
+
+@api.delete("/deletion-requests/{rid}")
+async def cancel_deletion_request(rid: str, user=Depends(owner_any)):
+    await db.deletion_requests.delete_one({"id": rid, "org_id": user["org_id"], "status": "PENDING"})
+    return {"ok": True}
+
+
+ORG_COLLECTIONS = ["products", "customers", "customer_types", "sales", "collections", "sales_returns", "purchases", "purchase_returns",
+                   "deliveries", "distributor_inventory", "stock_movements", "routes", "stock_requests", "invitations", "counters",
+                   "agent_locations", "price_history", "upgrade_requests"]
+
+
+@api.patch("/dev/deletion-requests/{rid}")
+async def review_deletion(rid: str, body: ReviewIn, user=Depends(DEV)):
+    req = await db.deletion_requests.find_one({"id": rid, "status": "PENDING"}, NO_ID)
+    if not req:
+        raise HTTPException(404, "الطلب غير موجود")
+    if body.action == "approve":
+        org = req["org_id"]
+        for c in ORG_COLLECTIONS:
+            await db[c].delete_many({"org_id": org})
+        await db.users.update_many({"org_id": org}, {"$set": {"role": None, "employee_type": None, "org_id": None}})
+        await db.organizations.delete_one({"id": org})
+        status = "APPROVED"
+    else:
+        status = "REJECTED"
+    await db.deletion_requests.update_one({"id": rid}, {"$set": {"status": status, "reviewed_at": iso()}})
+    return {"ok": True, "status": status}
+
+
+@api.delete("/auth/account")
+async def delete_account(user=Depends(get_user)):
+    if user.get("role") == "OWNER":
+        raise HTTPException(400, "المالك يجب أن يطلب حذف المؤسسة أولاً")
+    await db.user_sessions.delete_many({"user_id": user["user_id"]})
+    await db.notifications.delete_many({"user_id": user["user_id"]})
+    await db.users.delete_one({"user_id": user["user_id"]})
+    return {"ok": True}
+
+
+# ---- Consent (terms / privacy) ----
+@api.post("/auth/consent")
+async def accept_consent(user=Depends(get_user)):
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"consent_at": iso()}})
+    return await enrich(await db.users.find_one({"user_id": user["user_id"]}, NO_ID))
+
+
+# ---- App versions (developer) ----
+class VersionIn(BaseModel):
+    platform: str  # ios | android | all
+    version: str
+    force_update: bool = False
+    release_notes: str = ""
+    store_url: str = ""
+
+
+@api.get("/app-version/latest")
+async def latest_version(platform: str = "all"):
+    v = await db.app_versions.find({"platform": {"$in": [platform, "all"]}}, NO_ID).sort("created_at", -1).to_list(1)
+    return v[0] if v else None
+
+
+@api.get("/dev/versions")
+async def list_versions(user=Depends(DEV)):
+    return await db.app_versions.find({}, NO_ID).sort("created_at", -1).to_list(100)
+
+
+@api.post("/dev/versions")
+async def create_version(body: VersionIn, user=Depends(DEV)):
+    doc = {"id": new_id(), **body.model_dump(), "created_at": iso()}
+    await db.app_versions.insert_one(dict(doc))
+    return doc
+
+
+@api.delete("/dev/versions/{vid}")
+async def delete_version(vid: str, user=Depends(DEV)):
+    await db.app_versions.delete_one({"id": vid})
+    return {"ok": True}
+
+
+# ---- Developer monitoring ----
+@api.get("/dev/monitoring")
+async def monitoring(user=Depends(DEV)):
+    orgs = await db.organizations.find({}, NO_ID).to_list(1000)
+    out = []
+    week = (now() - timedelta(days=7)).isoformat()
+    for o in orgs:
+        last = await db.sales.find({"org_id": o["id"]}, {"_id": 0, "created_at": 1}).sort("created_at", -1).to_list(1)
+        out.append({"id": o["id"], "name": o["name"], "status": o["status"], "plan": o.get("plan"), "expires_at": o["expires_at"],
+                    "users": await db.users.count_documents({"org_id": o["id"]}),
+                    "products": await db.products.count_documents({"org_id": o["id"]}),
+                    "customers": await db.customers.count_documents({"org_id": o["id"]}),
+                    "sales": await db.sales.count_documents({"org_id": o["id"]}),
+                    "sales_week": await db.sales.count_documents({"org_id": o["id"], "created_at": {"$gte": week}}),
+                    "revenue": await _sum("sales", {"org_id": o["id"]}, "total"),
+                    "last_activity": last[0]["created_at"] if last else None})
+    out.sort(key=lambda x: x["last_activity"] or "", reverse=True)
+    return out
 
 
 @api.get("/")

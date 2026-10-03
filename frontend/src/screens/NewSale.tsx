@@ -12,7 +12,7 @@ import { useSyncState } from "@/src/offline";
 import { offlineSale } from "@/src/offlineActions";
 import { usePriceResolver } from "@/src/pricing";
 import { radius, spacing, useTheme } from "@/src/theme";
-import { Btn, Card, Empty, Field, Header, IconBtn, Loading, Select, T, useToast } from "@/src/ui";
+import { Btn, Card, Empty, Field, Header, IconBtn, Loading, Segments, Select, T, useToast } from "@/src/ui";
 
 type Line = { product_id: string; name: string; available: number; quantity: string; price: string };
 
@@ -33,7 +33,11 @@ export default function NewSale() {
   const resolve = usePriceResolver();
   const priceOf = (l: Line) => resolve(cust, l.product_id, +l.price);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const total = useMemo(() => lines.reduce((s, l) => s + (+l.quantity || 0) * priceOf(l), 0), [lines, cust, resolve]);
+  const subtotal = useMemo(() => lines.reduce((s, l) => s + (+l.quantity || 0) * priceOf(l), 0), [lines, cust, resolve]);
+  const [dType, setDType] = useState<"NONE" | "PERCENT" | "FIXED">("NONE");
+  const [dVal, setDVal] = useState("");
+  const discount = dType === "PERCENT" ? (subtotal * Math.min(+dVal || 0, 100)) / 100 : dType === "FIXED" ? Math.min(+dVal || 0, subtotal) : 0;
+  const total = Math.round((subtotal - discount) * 100) / 100;
   const [saving, setSaving] = useState(false);
 
   const addLine = (p: any) => {
@@ -55,7 +59,11 @@ export default function NewSale() {
         paid: paid === "" ? null : +paid || 0,
         notes,
         userName: user?.name,
+        discountType: dType,
+        discountValue: +dVal || 0,
       });
+      setDType("NONE");
+      setDVal("");
       setLast(doc);
       setCust(null);
       setLines([]);
@@ -108,6 +116,14 @@ export default function NewSale() {
           )}
         </View>
 
+        <View style={{ gap: spacing.xs }}>
+          <T v="label" color="onSurfaceSecondary">الخصم (اختياري)</T>
+          <View style={{ marginHorizontal: -spacing.lg }}>
+            <Segments value={dType} onChange={setDType} options={[{ key: "NONE", label: "بدون خصم" }, { key: "PERCENT", label: "نسبة %" }, { key: "FIXED", label: "مبلغ ثابت" }]} />
+          </View>
+          {dType !== "NONE" && <Field testID="sale-discount-input" label={dType === "PERCENT" ? "نسبة الخصم %" : "قيمة الخصم"} keyboardType="decimal-pad" value={dVal} onChangeText={setDVal} />}
+          {discount > 0 && <T v="caption" testID="sale-discount-amount">المجموع {money(subtotal)} − خصم {money(discount)}</T>}
+        </View>
         <Field testID="sale-paid-input" label="المبلغ المدفوع (اتركه فارغاً للدفع الكامل)" keyboardType="decimal-pad" value={paid} onChangeText={setPaid} placeholder={money(total)} />
         <Field testID="sale-notes-input" label="ملاحظات" value={notes} onChangeText={setNotes} />
       </KeyboardAwareScrollView>

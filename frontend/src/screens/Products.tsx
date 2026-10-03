@@ -2,6 +2,7 @@ import { useState } from "react";
 import { FlatList, RefreshControl, View } from "react-native";
 
 import { money } from "@/src/api";
+import { StockLog } from "@/src/components/StockLog";
 import { useApi, useBottomChrome, useMutate } from "@/src/hooks";
 import { spacing, useTheme } from "@/src/theme";
 import { Badge, Btn, Empty, ErrorBox, Field, Header, IconBtn, Loading, Row, Segments, Select, Sheet, T, useToast } from "@/src/ui";
@@ -12,7 +13,7 @@ export default function Products() {
   const { colors } = useTheme();
   const bottom = useBottomChrome();
   const toast = useToast();
-  const [tab, setTab] = useState<"products" | "purchases">("products");
+  const [tab, setTab] = useState<"products" | "purchases" | "returns" | "movements">("products");
   const products = useApi<any[]>("/products");
   const purchases = useApi<any[]>("/purchases");
   const [edit, setEdit] = useState<any | null>(null);
@@ -53,8 +54,10 @@ export default function Products() {
           </>
         }
       />
-      <Segments value={tab} onChange={setTab} options={[{ key: "products", label: "المنتجات" }, { key: "purchases", label: "المشتريات" }]} />
-      {q.isLoading ? (
+      <Segments value={tab} onChange={setTab} options={[{ key: "products", label: "المنتجات" }, { key: "purchases", label: "المشتريات" }, { key: "returns", label: "مرتجع المشتريات" }, { key: "movements", label: "حركة المخزون" }]} />
+      {tab === "returns" || tab === "movements" ? (
+        <StockLog tab={tab} products={products.data ?? []} />
+      ) : q.isLoading ? (
         <Loading />
       ) : q.error ? (
         <ErrorBox message={(q.error as Error).message} onRetry={q.refetch} />

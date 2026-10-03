@@ -7,6 +7,7 @@ import { useAuth } from "@/src/auth";
 import { AccountButton } from "@/src/components/AccountButton";
 import { AgentsMap } from "@/src/components/AgentsMap";
 import { OrgProfile } from "@/src/components/OrgProfile";
+import { OrgSettings } from "@/src/components/OrgSettings";
 import { PriceLists } from "@/src/components/PriceLists";
 import { RoutePlanner } from "@/src/components/RoutePlanner";
 import { OwnerStockRequests } from "@/src/components/StockRequests";
@@ -97,7 +98,10 @@ export default function OwnerMore() {
         ) : tab === "prices" ? (
           <PriceLists />
         ) : tab === "profile" ? (
-          <OrgProfile />
+          <>
+            <OrgProfile />
+            <OrgSettings />
+          </>
         ) : tab === "tracking" ? (
           tracking.isLoading ? <Loading /> : <AgentsMap agents={tracking.data ?? []} />
         ) : tab === "team" ? (

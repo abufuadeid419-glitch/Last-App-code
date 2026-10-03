@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { money } from "@/src/api";
 import { useAuth } from "@/src/auth";
+import { FinanceCard } from "@/src/components/AlertsCard";
 import { useApi } from "@/src/hooks";
 import { radius, spacing, useTheme } from "@/src/theme";
 import { Card, ErrorBox, Header, IconBtn, Loading, Segments, Stat, T } from "@/src/ui";
@@ -97,6 +98,7 @@ export default function Reports() {
                 </View>
               ))}
             </Card>
+            <FinanceCard />
           </>
         )}
       </ScrollView>

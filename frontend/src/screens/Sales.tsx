@@ -6,15 +6,28 @@ import { useAuth } from "@/src/auth";
 import { AccountButton } from "@/src/components/AccountButton";
 import { InvoiceActions } from "@/src/components/InvoiceActions";
 import { SyncBanner } from "@/src/components/SyncBanner";
-import { useApi, useBottomChrome } from "@/src/hooks";
+import { useApi, useBottomChrome, useMutate } from "@/src/hooks";
 import { offlineReturn } from "@/src/offlineActions";
 import { usePriceResolver } from "@/src/pricing";
 import { spacing, useTheme } from "@/src/theme";
 import { Badge, Btn, Card, Empty, ErrorBox, Field, Header, IconBtn, Loading, Row, Segments, Select, Sheet, T, useToast } from "@/src/ui";
 
-type Tab = "sales" | "returns" | "collections";
+type Tab = "sales" | "returns" | "collections" | "purchases" | "purchase_returns";
+type Range = "all" | "today" | "week" | "month";
+const since = (r: Range) => {
+  const d = new Date();
+  if (r === "today") d.setHours(0, 0, 0, 0);
+  else if (r === "week") d.setDate(d.getDate() - 7);
+  else if (r === "month") d.setDate(d.getDate() - 30);
+  else return 0;
+  return d.getTime();
+};
 
 function InvoiceSheet({ doc, onClose }: { doc: any | null; onClose: () => void }) {
+  const { user } = useAuth();
+  const [reason, setReason] = useState("");
+  const voidM = useMutate<any>("POST", (b) => `/sales/${b.id}/void`, "تم إلغاء الفاتورة", onClose);
+  const canVoid = doc?.invoice_no && !doc.voided && !doc.pending && (user?.role === "OWNER" || user?.employee_type === "ACCOUNTANT");
   return (
     <Sheet testID="invoice-detail-sheet" visible={!!doc} onClose={onClose} title={doc?.invoice_no ?? doc?.return_no ?? ""}>
       {doc && (
@@ -23,6 +36,7 @@ function InvoiceSheet({ doc, onClose }: { doc: any | null; onClose: () => void }
             <T v="h2">{doc.customer_name}</T>
             <T v="caption">الموزع: {doc.distributor_name} · {fmtDate(doc.created_at)}</T>
             {doc.payment_type && <Badge text={doc.payment_type === "CASH" ? "نقدي" : "آجل"} tone={doc.payment_type === "CASH" ? "success" : "warning"} />}
+            {doc.voided && <Badge testID="invoice-voided-badge" text={`ملغاة · ${doc.void_reason || ""}`} tone="error" />}
           </Card>
           {doc.items.map((it: any, i: number) => (
             <View key={i} style={{ flexDirection: "row", gap: spacing.sm }}>
@@ -32,7 +46,8 @@ function InvoiceSheet({ doc, onClose }: { doc: any | null; onClose: () => void }
             </View>
           ))}
           <Card style={{ gap: spacing.xs }}>
-            <T v="h2" testID="invoice-detail-total">الإجمالي: {money(doc.total)}</T>
+            {doc.discount_amount > 0 && <T v="caption">المجموع قبل الخصم: {money(doc.subtotal)} · الخصم: {money(doc.discount_amount)}{doc.discount_type === "PERCENT" ? ` (${doc.discount_value}%)` : ""}</T>}
+            <T v="h2" testID="invoice-detail-total">الإجمالي: {money(doc.voided ? doc.orig_total : doc.total)}</T>
             {doc.paid_amount !== undefined && (
               <>
                 <T color="success">المدفوع: {money(doc.paid_amount)}</T>
@@ -42,7 +57,13 @@ function InvoiceSheet({ doc, onClose }: { doc: any | null; onClose: () => void }
             {!!(doc.notes || doc.reason) && <T v="caption">{doc.notes || doc.reason}</T>}
           </Card>
           {doc.pending && <Badge text="بانتظار المزامنة" tone="warning" />}
-          <InvoiceActions doc={doc} />
+          {!doc.voided && <InvoiceActions doc={doc} />}
+          {canVoid && (
+            <Card style={{ gap: spacing.sm }}>
+              <Field testID="void-reason-input" label="سبب الإلغاء" value={reason} onChangeText={setReason} />
+              <Btn testID="void-invoice-button" small variant="danger" icon="ban-outline" title="إلغاء الفاتورة (إرجاع المخزون للموزع)" loading={voidM.isPending} onPress={() => voidM.mutate({ id: doc.id, reason })} />
+            </Card>
+          )}
         </>
       )}
     </Sheet>
@@ -94,10 +115,12 @@ export default function Sales({ tabs = ["sales", "returns"], title = "الفوا
   const [doc, setDoc] = useState<any>(null);
   const [ret, setRet] = useState(false);
   const isAgent = user?.employee_type === "FIELD_AGENT";
-  const path = tab === "sales" ? "/sales" : tab === "returns" ? "/sales-returns" : "/collections";
-  const q = useApi<any[]>(path);
-  const labels: Record<Tab, string> = { sales: "المبيعات", returns: "المرتجعات", collections: "التحصيلات" };
-  const total = (q.data ?? []).reduce((s, x) => s + (x.total ?? x.amount ?? 0), 0);
+  const paths: Record<Tab, string> = { sales: "/sales", returns: "/sales-returns", collections: "/collections", purchases: "/purchases", purchase_returns: "/purchase-returns" };
+  const q = useApi<any[]>(paths[tab]);
+  const labels: Record<Tab, string> = { sales: "المبيعات", returns: "المرتجعات", collections: "التحصيلات", purchases: "المشتريات", purchase_returns: "مرتجع المشتريات" };
+  const [range, setRange] = useState<Range>("all");
+  const data = (q.data ?? []).filter((x) => new Date(x.created_at).getTime() >= since(range));
+  const total = data.reduce((s, x) => s + (x.total ?? x.amount ?? 0), 0);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }} testID="sales-screen">
@@ -113,19 +136,24 @@ export default function Sales({ tabs = ["sales", "returns"], title = "الفوا
       />
       <SyncBanner />
       {tabs.length > 1 && <Segments value={tab} onChange={setTab} options={tabs.map((k) => ({ key: k, label: labels[k] }))} />}
+      <View style={{ marginTop: -spacing.md }}>
+        <Segments value={range} onChange={setRange} options={[{ key: "all", label: "الكل" }, { key: "today", label: "اليوم" }, { key: "week", label: "7 أيام" }, { key: "month", label: "30 يوماً" }]} />
+      </View>
       {q.isLoading ? (
         <Loading />
       ) : q.error ? (
         <ErrorBox message={(q.error as Error).message} onRetry={q.refetch} />
       ) : (
         <FlatList
-          data={q.data}
+          data={data}
           keyExtractor={(i) => i.id}
           contentContainerStyle={{ paddingBottom: bottom + spacing.xl }}
           refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={q.refetch} tintColor={colors.brandPrimary} />}
           ListEmptyComponent={<Empty icon="receipt-outline" text={`لا توجد ${labels[tab]} بعد`} />}
           renderItem={({ item }) =>
-            tab === "collections" ? (
+            tab === "purchases" || tab === "purchase_returns" ? (
+              <Row testID={`${tab}-row-${item.id}`} icon={tab === "purchases" ? "download-outline" : "arrow-undo-outline"} title={`${item.product_name} × ${money(item.quantity)}`} subtitle={`${item.supplier || "بدون مورد"} · ${fmtDate(item.created_at)}${item.reason ? " · " + item.reason : ""}`} right={<T v="label">{money(item.total)}</T>} />
+            ) : tab === "collections" ? (
               <Row testID={`collection-row-${item.id}`} icon="cash-outline" title={`${item.receipt_no} · ${item.customer_name}`} subtitle={`${item.collector_name ?? ""} · ${fmtDate(item.created_at)}`} right={<T v="label" color="success">{money(item.amount)}</T>} />
             ) : (
               <Row
@@ -136,7 +164,8 @@ export default function Sales({ tabs = ["sales", "returns"], title = "الفوا
                 onPress={() => setDoc(item)}
                 right={
                   <View style={{ alignItems: "flex-end", gap: 2 }}>
-                    <T v="label">{money(item.total)}</T>
+                    <T v="label" style={item.voided ? { textDecorationLine: "line-through" } : undefined}>{money(item.voided ? item.orig_total : item.total)}</T>
+                    {item.voided && <Badge text="ملغاة" tone="error" />}
                     {item.pending && <Badge text="غير متزامن" tone="warning" />}
                     {tab === "sales" && item.remaining > 0 && <Badge text={`آجل ${money(item.remaining)}`} tone="warning" />}
                   </View>

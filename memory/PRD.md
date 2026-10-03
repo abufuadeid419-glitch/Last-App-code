@@ -32,6 +32,19 @@ User choices: FastAPI + MongoDB backend, all roles (Developer, Owner, Accountant
 - Customer GPS location: saved from the customer form, or filled in automatically from the first sale with GPS
 - Yearly plans: the developer sets yearly_price. The upgrade screen has a monthly/yearly toggle and a "save X%" badge. A yearly approval adds 365 days
 
+## Iteration 4 (2026-06), in progress
+- Supabase was REVERTED at the user's request. The backend is back on MongoDB (Motor, MONGO_URL/DB_NAME). All Supabase data was copied back into Mongo, then every Supabase table was dropped. pgstore.py and the migration scripts were deleted, along with SUPABASE_DB_URL and asyncpg. The pre-restore Mongo data was saved to backend/mongo_backup_before_restore.json
+- Missing original features: backend done and screens wired; testing_agent NOT run yet
+  - Delivery confirm/reject by distributor; invoice discounts (%/fixed) and voiding
+  - Purchase returns, stock movements and price history
+  - Notifications center; accountant alerts; finance/discount analytics
+  - Route KPIs and route history; org currency and exchange rate
+  - JSON backup export; org deletion requests (dev approves); account deletion
+  - Terms/privacy consent gate and legal screens; help FAQ
+  - Developer monitoring, app version management and update gate
+- Push notifications (Emergent managed): playbook received, NOT implemented. Waiting for the user's google-services.json
+- The user's Expo Go shows a 403 "Region Restricted" page, a platform region block rather than a code issue
+
 ## Backlog
 - Background location tracking (requires a native build)
 - P1: PDF/print and share for invoices; offline sales queue; purchase returns; reports by date range

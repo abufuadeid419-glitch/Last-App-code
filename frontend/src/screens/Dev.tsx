@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { ReactNode, useState } from "react";
 import { FlatList, RefreshControl, ScrollView, View } from "react-native";
 
 import { fmtDate } from "@/src/api";
 import { useAuth } from "@/src/auth";
+import { Monitoring } from "@/src/components/Monitoring";
 import { AccountButton } from "@/src/components/AccountButton";
 import { useApi, useBottomChrome, useMutate } from "@/src/hooks";
 import { spacing, useTheme } from "@/src/theme";
@@ -27,6 +28,7 @@ export function DevHome() {
             <Stat testID="dev-stat-sales" label="الفواتير" value={String(s.data.sales)} icon="receipt-outline" tone="success" />
           </View>
         )}
+        <View style={{ marginTop: spacing.xl }}><Monitoring /></View>
       </ScrollView>
     </View>
   );
@@ -80,7 +82,7 @@ export function DevLicenses() {
   );
 }
 
-export function DevOrgs() {
+export function DevOrgs({ header }: { header?: ReactNode }) {
   const { colors } = useTheme();
   const bottom = useBottomChrome();
   const q = useApi<any[]>("/dev/orgs");
@@ -90,6 +92,7 @@ export function DevOrgs() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }} testID="dev-orgs-screen">
       <Header title="المؤسسات" subtitle={`${q.data?.length ?? 0} مؤسسة`} />
+      {header}
       {q.isLoading ? <Loading /> : (
         <FlatList
           data={q.data}

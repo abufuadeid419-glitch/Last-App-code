@@ -11,6 +11,7 @@ import { ErrorBoundary } from "@/src/components/error-boundary";
 import { queryClient } from "@/src/query-client";
 import { useTheme } from "@/src/theme";
 import { ToastProvider } from "@/src/ui";
+import { UpdateGate } from "@/src/components/UpdateGate";
 
 // Disable logbox errors etc so that users can see the app
 // and agent works as expected.
@@ -40,7 +41,8 @@ function Gate() {
     // Shared stack screens reachable from inside the app.
     const allowed =
       (seg === "reports" && ["owner", "acct"].includes(target)) ||
-      (seg === "upgrade" && user?.role === "OWNER");
+      (seg === "upgrade" && user?.role === "OWNER") ||
+      seg === "legal";
     if (seg !== target && !allowed) router.replace(`/${target}` as any);
   }, [user, segments, router]);
 
@@ -68,7 +70,9 @@ export default function RootLayout() {
           <AuthProvider>
             <ToastProvider>
               <StatusBar style="dark" />
-              <Gate />
+              <UpdateGate>
+                <Gate />
+              </UpdateGate>
             </ToastProvider>
           </AuthProvider>
         </KeyboardProvider>

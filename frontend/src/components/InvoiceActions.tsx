@@ -50,7 +50,9 @@ td{padding:9px;border-bottom:1px solid #E8ECE9} tr:nth-child(even) td{background
 </div>
 <table><thead><tr><th>#</th><th>الصنف</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead><tbody>${rows}</tbody></table>
 <div class="tot">
-  <div class="g"><span>الإجمالي</span><span>${money(doc.total)}</span></div>
+  ${doc.discount_amount > 0 ? `<div><span>المجموع</span><span>${money(doc.subtotal)}</span></div><div><span>الخصم${doc.discount_type === "PERCENT" ? ` (${doc.discount_value}%)` : ""}</span><span>- ${money(doc.discount_amount)}</span></div>` : ""}
+  <div class="g"><span>الإجمالي</span><span>${money(doc.total)} ${esc(org?.currency ?? "")}</span></div>
+  ${org?.alt_currency && org?.exchange_rate ? `<div><span>ما يعادل</span><span>${money(doc.total / org.exchange_rate)} ${esc(org.alt_currency)}</span></div>` : ""}
   ${doc.paid_amount !== undefined ? `<div><span>المدفوع</span><span>${money(doc.paid_amount)}</span></div><div><span>المتبقي</span><span>${money(doc.remaining)}</span></div>` : ""}
   ${customer ? `<div><span>رصيد العميل الحالي</span><span>${money(customer.balance)}</span></div>` : ""}
 </div>

@@ -3,6 +3,9 @@ import os
 import time
 import pytest
 import requests
+from dotenv import load_dotenv
+
+load_dotenv("/app/backend/.env")
 
 BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "https://mobile-rebuild-22.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
@@ -22,6 +25,36 @@ def H(role):
 
 # shared state for sequencing
 STATE = {}
+
+
+def _reset_new_user():
+    """Reset seeded 'new' user back to unactivated via Supabase SQL (asyncpg)."""
+    import asyncio
+    import asyncpg
+    dsn = os.environ.get("SUPABASE_DB_URL")
+    if not dsn:
+        return
+
+    async def _do():
+        conn = await asyncpg.connect(dsn)
+        try:
+            # user_id is inside doc, pk is a random uuid
+            row = await conn.fetchrow("SELECT pk, doc FROM c_users WHERE doc->>'user_id'=$1", "user_test_new")
+            if not row:
+                return
+            import json as _j
+            doc = row["doc"] if isinstance(row["doc"], dict) else _j.loads(row["doc"])
+            for k in ("role", "employee_type", "org_id"):
+                doc[k] = None
+            await conn.execute("UPDATE c_users SET doc=$1::jsonb WHERE pk=$2", _j.dumps(doc, ensure_ascii=False), row["pk"])
+        finally:
+            await conn.close()
+
+    try:
+        asyncio.run(_do())
+    except Exception as e:
+        print(f"[DBG reset_new_user failed] {type(e).__name__}: {e}")
+        raise
 
 
 # --- Auth ---
@@ -93,27 +126,22 @@ class TestActivation:
         assert r.status_code == 400
 
     def test_activate_with_license(self):
-        # create fresh new user via session? we only have seeded 'new'. Use license code from previous test
+        _reset_new_user()
         code = STATE.get("lic_code")
         assert code
         r = requests.post(f"{API}/activate", headers=H("new"), json={"code": code})
         assert r.status_code == 200, r.text
         d = r.json()
         assert d["role"] == "OWNER" and d["org"]["name"] == "TEST_LIC_ORG"
-        # restore 'new'
-        from pymongo import MongoClient
-        db = MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))[os.environ.get("DB_NAME", "test_database")]
-        db.users.update_one({"user_id": "user_test_new"}, {"$set": {"role": None, "employee_type": None, "org_id": None}})
+        _reset_new_user()
 
     def test_trial_creates_org(self):
+        _reset_new_user()
         r = requests.post(f"{API}/trial", headers=H("new"), json={"org_name": "TEST_TRIAL_ORG"})
         assert r.status_code == 200, r.text
         d = r.json()
         assert d["role"] == "OWNER" and d["org"]["plan"] == "TRIAL"
-        # restore 'new' back to unactivated
-        from pymongo import MongoClient
-        db = MongoClient(os.environ.get("MONGO_URL", "mongodb://localhost:27017"))[os.environ.get("DB_NAME", "test_database")]
-        db.users.update_one({"user_id": "user_test_new"}, {"$set": {"role": None, "employee_type": None, "org_id": None}})
+        _reset_new_user()
 
 
 # --- Owner flows ---
@@ -171,6 +199,12 @@ class TestOwnerFlow:
         # warehouse stock reduced
         prod = next(p for p in requests.get(f"{API}/products", headers=H("owner")).json() if p["id"] == STATE["pid"])
         assert prod["stock"] == 50
+        # NEW: delivery is PENDING until agent confirms; agent confirms to receive stock
+        did = r.json()["id"]
+        assert r.json().get("status") == "PENDING"
+        c = requests.post(f"{API}/deliveries/{did}/confirm", headers=H("agent"))
+        assert c.status_code == 200, c.text
+        STATE["delivery_id"] = did
 
     def test_delivery_over_stock_fails(self):
         r = requests.post(f"{API}/deliveries", headers=H("owner"),

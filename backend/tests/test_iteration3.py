@@ -32,6 +32,8 @@ class TestA_Setup:
                               json={"name": "TEST_ITER3_P", "cost_price": 2, "sale_price": 15, "stock": 0, "min_stock": 5})
             assert r.status_code == 200
             p = r.json()
+        # Ensure enough warehouse stock for the delivery and fulfill tests (needs >= 80)
+        if (p.get("stock") or 0) < 100:
             requests.post(f"{API}/purchases", headers=H("owner"),
                           json={"product_id": p["id"], "quantity": 200, "unit_cost": 2})
         STATE["pid"] = p["id"]
@@ -40,7 +42,11 @@ class TestA_Setup:
         r = requests.post(f"{API}/deliveries", headers=H("owner"),
                           json={"distributor_id": "user_test_agent",
                                 "items": [{"product_id": STATE["pid"], "quantity": 50}]})
-        assert r.status_code == 200
+        assert r.status_code == 200, r.text
+        did = r.json()["id"]
+        # NEW: delivery is PENDING; agent confirms to receive stock
+        c = requests.post(f"{API}/deliveries/{did}/confirm", headers=H("agent"))
+        assert c.status_code == 200, c.text
 
 
 # ------------- Customer types / price lists -------------
